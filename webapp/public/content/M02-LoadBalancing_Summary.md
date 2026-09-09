@@ -560,21 +560,7 @@ AZ-A, AZ-B, AZ-C 세 AZ 를 활성화한 로드 밸런서에서 **AZ-A 의 대�
 |---|---|
 | 여러 AZ 가 전제 | 활성화한 AZ 가 하나면 내려줄 다른 IP 가 없습니다. 교재의 "단일 AZ 를 위해 설계" 와 "다른 AZ 로 자동 장애 조치" 가 함께 성립하지 않는 이유입니다 |
 | 새 연결부터 적용 | 이미 열려 있는 연결은 옮겨지지 않습니다. 또 클라이언트가 캐시한 이전 DNS 응답의 TTL(60초)이 만료되어야 반영됩니다 (2.4 절) |
-| 끌 수 있음 | 자동으로 항상 일어나는 일이 아닙니다. 아래 임계값 속성으로 정하고 `off` 로 둘 수 있습니다 |
-
-#### 임계값 두 개가 서로 다른 일을 합니다
-
-이름이 비슷해 헷갈리는 지점입니다. 둘 다 대상 그룹 속성이고 **ALB·NLB 공통**입니다.
-
-| 속성 | 임계값 미달일 때 하는 일 | 기본값 |
-|---|---|---|
-| `target_group_health.dns_failover.minimum_healthy_targets.count` | 그 영역 노드의 IP 를 **DNS 에서 비정상으로 표시**합니다. 클라이언트가 정상 영역으로만 갑니다 | **1** |
-| `target_group_health.dns_failover.minimum_healthy_targets.percentage` | 위와 같으나 백분율 기준입니다 | **`off`** |
-| `target_group_health.unhealthy_state_routing.minimum_healthy_targets.count` | DNS 는 그대로 두고, 노드가 **비정상 대상까지 포함해 모든 대상으로** 보냅니다 | **1** |
-| `target_group_health.unhealthy_state_routing.minimum_healthy_targets.percentage` | 위와 같으나 백분율 기준입니다 | **`off`** |
-
-앞의 둘은 **DNS 장애 조치**, 뒤의 둘은 **라우팅 장애 조치**입니다. `off` 로 두면 대상이 전부
-비정상이어도 그 영역을 DNS 에서 빼지 않습니다.
+| 끌 수 있음 | 자동으로 항상 일어나는 일이 아닙니다. 대상 그룹의 **정상 대상 임계값** 속성이 기준이고, 이 값을 끄면 대상이 전부 비정상이어도 그 영역을 DNS 에서 빼지 않습니다 |
 
 #### 모든 AZ 가 비정상이면 반대로 동작합니다
 
