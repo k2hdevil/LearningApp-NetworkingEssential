@@ -1,0 +1,29 @@
+{
+  "name": "networking-essentials-summary",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Networking Essentials for Cloud Applications on AWS 정리 자료",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/check-tokens.mjs && vite build",
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "preview": "vite preview",
+    "validate": "python3 ../pipeline/validate.py",
+    "check:render": "node scripts/render-check.mjs"
+  },
+  "dependencies": {
+    "@cloudscape-design/components": "3.0.1365",
+    "@cloudscape-design/design-tokens": "3.0.111",
+    "@cloudscape-design/global-styles": "1.0.68",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "react-syntax-highlighter": "16.1.1",
+    "remark-gfm": "4.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.2.2"
+  }
+}

@@ -1,0 +1,62 @@
+/* D2 다이어그램. 배경은 흰색으로 고정합니다.
+   Kroki 가 돌려주는 SVG 는 선과 글자가 검은색이므로 다크 모드에서 배경까지 어두워지면
+   보이지 않습니다. */
+.d2-diagram-container {
+  background: #ffffff;
+  padding: 4px;
+  border-radius: 8px;
+  text-align: center;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 16px 0;
+  cursor: zoom-in;
+}
+
+.d2-diagram-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.d2-diagram-loading,
+.d2-diagram-error {
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--nea-text-body);
+  background: var(--nea-quote-bg);
+}
+
+.d2-diagram-error pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+.d2-diagram-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  cursor: zoom-out;
+}
+
+.d2-diagram-modal {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 16px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.d2-diagram-modal svg {
+  width: 100%;
+  height: auto;
+}

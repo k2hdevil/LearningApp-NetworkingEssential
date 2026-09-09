@@ -1,0 +1,196 @@
+/* 마크다운 본문 스타일.
+   색은 전부 `--nea-*` 변수를 거칩니다. 값을 직접 적으면 다크 모드에서 안 보입니다.
+   변수는 src/theme.js 가 Cloudscape 디자인 토큰에서 주입합니다. */
+
+.markdown-body {
+  color: var(--nea-text-body);
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: var(--nea-text-heading);
+  font-weight: 700;
+  line-height: 1.35;
+  /* 상단 고정 헤더에 헤딩이 가리지 않게 합니다.
+     src/theme.js 의 SCROLL_OFFSET 과 같은 값이어야 합니다. 한쪽만 바꾸면 어긋납니다. */
+  scroll-margin-top: 80px;
+}
+
+.markdown-body h1 {
+  font-size: 28px;
+  margin: 0 0 12px;
+}
+
+.markdown-body h2 {
+  font-size: 22px;
+  margin: 36px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--nea-divider);
+}
+
+.markdown-body h3 {
+  font-size: 18px;
+  margin: 28px 0 10px;
+}
+
+.markdown-body h4 {
+  font-size: 16px;
+  margin: 20px 0 8px;
+}
+
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: 15px;
+  margin: 16px 0 8px;
+}
+
+.markdown-body p {
+  margin: 0 0 12px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 12px;
+  padding-left: 24px;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 4px 0;
+}
+
+.markdown-body hr {
+  height: 1px;
+  border: 0;
+  margin: 28px 0;
+  background: var(--nea-divider);
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-body strong {
+  font-weight: 700;
+  color: var(--nea-text-heading);
+}
+
+.markdown-body a {
+  color: var(--nea-link);
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  color: var(--nea-link-hover);
+  text-decoration: underline;
+}
+
+/* 출처 인용과 표기 설명 블록이 이 스타일을 씁니다. */
+.markdown-body blockquote {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border-left: 4px solid var(--nea-quote-border);
+  border-radius: 0 4px 4px 0;
+  background: var(--nea-quote-bg);
+}
+
+.markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* 인라인 코드. CIDR·포트·리소스 이름에 많이 쓰입니다. */
+.markdown-body :not(pre) > code {
+  background: var(--nea-code-bg);
+  color: var(--nea-text-body);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--nea-font-mono);
+  font-size: 0.88em;
+}
+
+/* 코드 블록 안쪽 code 는 인라인 스타일을 물려받지 않게 되돌립니다. */
+.markdown-body .code-block code {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-size: inherit;
+}
+
+.code-block {
+  margin: 16px 0;
+  border: 1px solid var(--nea-divider);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 2px 12px;
+  background: var(--nea-table-header-bg);
+  border-bottom: 1px solid var(--nea-divider);
+}
+
+.code-block-language {
+  color: var(--nea-text-secondary);
+  font-family: var(--nea-font-mono);
+  font-size: 12px;
+  text-transform: lowercase;
+}
+
+.code-block pre {
+  margin: 0;
+  overflow-x: auto;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.markdown-body th {
+  background: var(--nea-table-header-bg);
+  color: var(--nea-text-heading);
+  font-weight: 700;
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--nea-divider);
+}
+
+.markdown-body td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--nea-divider);
+  vertical-align: top;
+}
+
+.markdown-body tbody tr:hover {
+  background: var(--nea-row-hover-bg);
+}
+
+.markdown-body tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown-table-scroll {
+  overflow-x: auto;
+  margin: 16px 0;
+  border: 1px solid var(--nea-divider);
+  border-radius: 8px;
+  background: var(--nea-surface);
+}

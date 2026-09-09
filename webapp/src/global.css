@@ -1,0 +1,145 @@
+/* 앱 셸 레이아웃. 마크다운 본문 스타일은 components/MarkdownRenderer.css 에 있습니다. */
+
+body {
+  margin: 0;
+  /* `overflow-x: hidden` 을 넣지 마세요. #top-nav 의 sticky 가 무효가 됩니다. */
+}
+
+/* 상단 헤더.
+   `position: fixed` 로 바꾸면 Cloudscape AppLayout 의 headerSelector 오프셋 계산이 깨집니다. */
+#top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1002;
+}
+
+:root {
+  /* Cloudscape 가 내비게이션 닫기 버튼("<")을 패널 컨테이너 위쪽에서 이만큼 내려 놓고,
+     버튼 자체는 이 높이를 차지합니다. 과정 목차 제목을 그 버튼과 같은 줄에 두려고
+     같은 값을 씁니다. Cloudscape 를 올린 뒤 값이 달라지면 정렬이 조용히 어긋나므로,
+     렌더 검사의 "내비게이션 정렬" 항목이 세로 중심을 비교해서 잡습니다. */
+  --nea-nav-close-offset: 15px;
+  --nea-nav-close-size: 32px;
+  /* 닫기 버튼이 패널 오른쪽에서 차지하는 폭. 과정 목차 제목이 이 영역을 비켜 갑니다. */
+  --nea-nav-close-reserve: 52px;
+  /* 내비게이션 제목의 왼쪽 여백. 과정 목차와 모듈 목차가 같은 값을 씁니다. */
+  --nea-nav-inset: 3px;
+  /* 제목과 그 아래 첫 항목 사이 여백. 두 목차가 같은 값을 씁니다. */
+  --nea-nav-heading-gap: 4px;
+}
+
+/* 내비게이션 패널.
+   위쪽이 과정 목차(모듈 트리), 아래쪽이 페이지 목차입니다.
+   높이를 창에 묶어 두어야 트리가 길어져도 페이지 목차가 화면에서 밀려나지 않습니다.
+   88px 은 상단 헤더 높이와 패널 여백의 합입니다. */
+.nea-nav {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  /* 첫 제목을 닫기 버튼 줄까지 내립니다. */
+  padding-block-start: var(--nea-nav-close-offset);
+  block-size: calc(100vh - 88px);
+  max-block-size: calc(100vh - 88px);
+}
+
+.nea-nav--tree-collapsed .nea-nav-tree {
+  display: none;
+}
+
+/* 트리와 목차의 높이 배분은 6:4 입니다. 트리는 6개 항목으로 고정이지만
+   페이지 목차는 모듈에 따라 최대 11개까지 늘어납니다. */
+.nea-nav-tree {
+  flex: 6 1 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-inline-end: 2px;
+  padding-block-end: 8px;
+}
+
+/* Cloudscape SideNavigation 은 (우리가 쓰지 않는) header 슬롯과 목록 사이에 16px 을 둡니다.
+   제목은 위쪽 토글 버튼이 맡으므로 그 여백을 우리 값으로 바꿉니다. 그대로 두면 과정 목차
+   제목 아래만 모듈 목차보다 넓어집니다.
+
+   음수 마진으로 끌어올리지 않는 이유: `.nea-nav-tree` 는 스크롤 컨테이너라 위로 끌면
+   스크롤한 항목이 제목 줄까지 올라옵니다. 그걸 가리려고 제목에 불투명 배경을 깔면 이번에는
+   Cloudscape 의 닫기 버튼을 덮습니다. 여백 자체를 고치는 편이 부작용이 없습니다.
+
+   `!important` 가 필요한 이유: Cloudscape 는 내부 규칙에 `:not(#\9)` 를 붙여 특이도를
+   ID 수준으로 올려 둡니다. 클래스 선택자로는 이길 수 없습니다.
+
+   해시가 붙은 클래스에 의존하므로 패키지를 올리면 안 맞을 수 있습니다.
+   렌더 검사의 "제목 아래 여백 일치" 항목이 두 목차의 여백을 비교해서 잡습니다. */
+.nea-nav-tree > * > [class*="list-container"] {
+  margin-block-start: var(--nea-nav-heading-gap) !important;
+}
+
+.nea-outline {
+  border-block-start: 1px solid var(--nea-divider);
+  margin-block-start: 12px;
+  padding-block-start: 4px;
+  /* 왼쪽 여백은 토글 버튼과 목록이 각각 가집니다.
+     여기에 주면 모듈 목차 제목이 과정 목차 제목보다 안쪽으로 밀립니다. */
+  padding-inline-start: 0;
+  padding-inline-end: 2px;
+  flex: 4 1 0;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nea-outline--collapsed {
+  flex: none;
+  overflow-y: visible;
+}
+
+.nea-outline-list {
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-inline-start: 8px;
+}
+
+/* 두 제목은 같은 왼쪽 여백과 같은 줄 높이를 씁니다.
+   줄 높이를 닫기 버튼과 같게 두면 제목의 세로 중심이 버튼의 세로 중심과 맞습니다. */
+.nea-outline-toggle,
+.nea-tree-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  inline-size: 100%;
+  min-block-size: var(--nea-nav-close-size);
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: start;
+  padding: 0;
+  padding-inline-start: var(--nea-nav-inset);
+}
+
+/* 과정 목차 제목은 Cloudscape 가 그리는 닫기 버튼("<")과 **같은 줄**에 있습니다.
+   전체 너비를 차지하면 그 버튼을 가려 보이지 않게 하고 클릭까지 가로챕니다.
+   (버튼이 사라진 것처럼 보이는 증상이 실제로 이것이었습니다.)
+   렌더 검사가 버튼 중심에서 elementFromPoint 로 확인합니다. */
+.nea-tree-toggle {
+  inline-size: calc(100% - var(--nea-nav-close-reserve));
+}
+
+.nea-outline-caret,
+.nea-tree-caret {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.app-footer {
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--nea-divider);
+  background: var(--nea-surface);
+}
+
+.app-footer-text {
+  margin: 0;
+  max-width: 900px;
+  color: var(--nea-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}

@@ -1,0 +1,28 @@
+# AWS Amplify Hosting 빌드 스펙
+#
+# 앱이 저장소 루트가 아니라 webapp/ 아래에 있습니다.
+# `cd webapp` 대신 `npm --prefix` 를 쓰는 이유: cd 는 이후 모든 단계에 적용되어
+# artifacts 의 baseDirectory 기준이 루트인지 webapp 인지 모호해집니다.
+# --prefix 는 작업 디렉터리를 옮기지 않으므로 baseDirectory 를 항상 루트 기준으로 적을 수 있습니다.
+#
+# 빌드 스크립트는 `node scripts/check-tokens.mjs && vite build` 입니다.
+# 앞 단계에서 Cloudscape 디자인 토큰 이름을 검사하므로, 토큰이 사라지면 배포가 아니라
+# 빌드에서 멈춥니다. 다크 모드가 조용히 깨진 채 배포되는 것을 막는 장치입니다.
+
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm --prefix webapp ci
+    build:
+      commands:
+        - npm --prefix webapp run build
+  artifacts:
+    # Vite 산출물. 마크다운 콘텐츠는 webapp/public/content/ 에서 dist/content/ 로 복사됩니다.
+    baseDirectory: webapp/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - webapp/node_modules/**/*
