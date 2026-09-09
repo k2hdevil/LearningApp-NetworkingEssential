@@ -593,38 +593,6 @@ AZ-A, AZ-B 대상 전부 비정상       → DNS 응답: IP 1개 (C)           �
 
 > — 출처: [Troubleshoot your Network Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-troubleshooting.html)
 
-#### ALB 와 NLB 의 차이 🆕
-
-메커니즘은 같지만 문서화 수준과 실제 효과가 갈리는 지점이 있습니다.
-
-| 항목 | ALB | NLB |
-|---|---|---|
-| 영역별 DNS 레코드 | 있습니다. `az.name-id.elb.region.amazonaws.com` | 있습니다. 같은 형식 |
-| DNS 장애 조치 / 라우팅 장애 조치 속성 | 있습니다. 기본값도 같습니다 | 있습니다 |
-| AWS 의 선제적 제거 | 여러 인프라 문제가 서비스에 영향을 줄 때 AWS 가 영역 IP 를 DNS 에서 **선제적으로 제거**한다고 문서화되어 있습니다 | 같은 문장이 문서화되어 있습니다 |
-| 전용 `영역 상태` 절 | **없습니다** | **있습니다.** `Load balancer zonal health` 절에서 실패 원인 네 가지를 열거합니다 |
-| `ZonalHealthStatus` CloudWatch 지표 | **없습니다** (ALB 지표 목록에 없음) | **있습니다** |
-| 교차 영역 기본값이 만드는 차이 | 로드 밸런서 수준에서 **항상 켜짐**이라 AZ-A 노드가 AZ-B·AZ-C 대상까지 씁니다. 대상 그룹 수준에서 끄지 않는 한 한 AZ 의 대상 손실이 곧 그 노드의 무용화로 이어지지 않습니다 (7.2 절) | **기본 꺼짐**이라 AZ-A 노드는 AZ-A 대상만 씁니다. AZ-A 대상이 전부 비정상이면 그 노드는 보낼 곳이 없어집니다 |
-
-마지막 행이 실무에서 체감되는 차이입니다. 교차 영역이 꺼진 NLB 는 **영역 격리가 강한 대신
-한 AZ 의 대상 손실이 그대로 드러나고**, 교차 영역이 켜진 ALB 는 그 손실을 다른 AZ 의 대상으로
-흡수합니다. 교재가 `영역별 격리` 를 NLB 의 특징으로 든 것은 이 성질을 가리킨 것으로 보이며,
-그 자체는 타당합니다. 부정확한 것은 "단일 AZ 를 위해 설계" 라는 표현입니다.
-
-NLB 문서만 영역 상태 확인 실패 원인을 명시합니다. 네 가지입니다.
-
-- 로드 밸런서에 정상 대상이 없음
-- 정상 대상 수가 설정한 최소값 미달
-- 영역 이동 또는 자동 영역 이동이 진행 중 (7.5 절)
-- **감지된 문제로 트래픽이 정상 영역으로 자동 이동 중**
-
-마지막 항목이 교재가 말하려던 자동 장애 조치에 가장 가깝습니다. AWS 가 영역 문제를 감지해
-트래픽을 정상 영역으로 자동으로 옮기는 동작은 실제로 존재합니다.
-
-> — 출처: [Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/network-load-balancers.html)
-
-> — 출처: [Zonal shift for Application Load Balancers](https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-shift.resource-types.app-load-balancers.html)
-
 ### 7.5 영역 이동 🆕
 
 AZ 하나가 손상됐을 때 쓰는 별도 장치가 있습니다. **영역 이동(zonal shift)** 은
