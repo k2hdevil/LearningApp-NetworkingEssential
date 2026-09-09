@@ -356,53 +356,16 @@ XFF 값이 `클라이언트IP:포트` 형태가 되고, IPv6 는 주소를 대�
 주소를 확보**합니다. **NLB 를 만들 때** 각 네트워크 인터페이스에 EIP 하나를 선택적으로
 연결할 수 있습니다.
 
-#### 영역별 격리를 교재와 다르게 적은 이유 🔄
+#### 교재의 `영역별 격리` 서술을 고친 이유 🔄
 
 교재는 이 항목을 "**단일 가용 영역의 아키텍처를 위해 설계**되었고, AZ 에 장애가 발생하면
 AWS 가 **자동으로 다른 정상 AZ 로 장애 조치**한다"고 서술합니다. 두 문장이 서로 맞지
 않습니다. 활성화한 AZ 가 하나뿐이면 넘길 AZ 가 없습니다.
 
-실제 동작은 **AZ 를 옮기는 것이 아니라 DNS 에서 빼는 것**입니다. NLB 는 활성화한 **AZ 마다**
-Route 53 에 영역별 DNS 레코드와 IP 주소를 갖습니다. 특정 AZ 가 영역 상태 확인에 실패하면
-**그 AZ 의 DNS 레코드가 Route 53 에서 제거**됩니다. 이후 이름을 조회하는 클라이언트는 정상
-AZ 의 IP 만 받습니다.
-
-영역 상태 확인이 실패하는 원인은 네 가지로 문서화되어 있습니다.
-
-- 로드 밸런서에 정상 대상이 없음
-- 정상 대상 수가 설정한 최소값 미달
-- 영역 이동 또는 자동 영역 이동이 진행 중 (7.4 절)
-- **감지된 문제로 트래픽이 정상 영역으로 자동 이동 중**
-
-마지막 항목이 교재가 말하려던 것에 가장 가깝습니다. AWS 가 영역 문제를 감지해 트래픽을
-정상 영역으로 자동으로 옮기는 동작은 실제로 있습니다. 다만 그 수단이 영역별 DNS 레코드
-제거이고, **여러 AZ 를 활성화한 경우에만** 의미가 있습니다. 영역 상태는
-`ZonalHealthStatus` CloudWatch 지표로 관찰합니다.
-
-> — 출처: [Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/network-load-balancers.html)
-
-여기서 함께 알아 둘 점이 세 가지 있습니다.
-
-| 짚을 점 | 내용 |
-|---|---|
-| 반영 시점 | **새 연결부터** 적용됩니다. 영역 이동 문서는 손상된 AZ 의 대상으로 **이미 열려 있는 연결은 자연히 닫힐 때까지 유지**되고 새 연결만 그 AZ 로 가지 않는다고 서술합니다. DNS 응답에 의존하므로 클라이언트가 캐시한 이전 응답의 TTL(60초)도 함께 고려해야 합니다 (2.4 절) |
-| 제거 임계값 | 대상 그룹 속성 `target_group_health.dns_failover.minimum_healthy_targets.count` 가 기준입니다. 기본값은 **1** 이고, `off` 로 두면 대상이 전부 비정상이어도 그 영역을 DNS 에서 빼지 않습니다. `.percentage` 는 기본값이 **`off`** 입니다 |
-| 모든 AZ 가 비정상일 때 | **fail-open** 으로 동작합니다. DNS 에서 IP 를 전부 빼는 대신 **활성화한 모든 AZ 의 IP 를 그대로 돌려주고**, 비정상 대상까지 포함해 라우팅합니다. 장애 조치와 반대 방향입니다 |
-
-세 AZ 를 활성화한 NLB 의 예입니다. 교차 영역 로드 밸런싱은 꺼진 상태입니다.
-
-```text
-AZ-A 정상, AZ-B 정상, AZ-C 정상   → DNS 응답: IP 3개 (A, B, C)
-AZ-A 대상 전부 비정상             → DNS 응답: IP 2개 (B, C)        ← A 제거
-AZ-A, AZ-B 대상 전부 비정상       → DNS 응답: IP 1개 (C)           ← A, B 제거
-세 AZ 대상 전부 비정상            → DNS 응답: IP 3개 (A, B, C)     ← fail-open
-```
-
-> — 출처: [Troubleshoot your Network Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-troubleshooting.html)
-
-> — 출처: [Target groups for your Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-target-groups.html)
-
-> — 출처: [Zonal shift for Network Load Balancers](https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-shift.resource-types.network-load-balancers.html)
+실제 동작은 AZ 를 옮기는 것이 아니라 **비정상 AZ 를 DNS 응답에서 빼는 것**이고, 이 동작은
+**NLB 전용이 아니라 ALB 에도 똑같이 적용됩니다.** 그래서 7.4 절에 두 유형을 함께 놓고
+정리했습니다. [7.4 한 AZ 에 장애가 나면 무엇이 일어나는가](#74-한-az-에-장애가-나면-무엇이-일어나는가)
+를 보세요.
 
 ### 5.2 대상 선택 방식 🆕
 
@@ -558,16 +521,136 @@ AZ 간에 실제로 용량을 밸런싱하는 것"** 입니다.
 나뉘지만, **AZ 경계를 넘는 트래픽**이 생기고 한 AZ 의 문제가 다른 AZ 대상까지 영향을 줄
 여지가 커집니다. 각 AZ 에 용량을 고르게 두는 편이 격리 관점에서 낫습니다.
 
-### 7.4 영역 이동 🆕
+### 7.4 한 AZ 에 장애가 나면 무엇이 일어나는가 🆕
+
+교재가 NLB 의 `영역별 격리` 항목에서 "AZ 장애 시 자동 장애 조치"라고만 적고 넘어간 부분입니다.
+**ALB 와 NLB 에 공통으로 적용됩니다.**
+
+#### 장애가 번지는 순서
+
+AZ-A, AZ-B, AZ-C 세 AZ 를 활성화한 로드 밸런서에서 **AZ-A 의 대상이 전부 비정상**이 됐다고
+하겠습니다.
+
+```text
+1  로드 밸런서는 활성화한 AZ 마다 노드를 두고, 노드마다 IP 가 하나씩 있습니다.
+   이름을 조회하면 IP 3개가 돌아옵니다.
+
+     example.elb.ap-northeast-2.amazonaws.com  →  10.0.1.10  (AZ-A 노드)
+                                                  10.0.2.10  (AZ-B 노드)
+                                                  10.0.3.10  (AZ-C 노드)
+
+2  AZ-A 의 정상 대상 수가 임계값 아래로 떨어집니다.
+
+3  AWS 가 AZ-A 노드의 IP 를 DNS 에서 비정상으로 표시합니다.
+   로드 밸런서를 다른 AZ 로 옮기는 것이 아닙니다.
+
+4  이후 이름을 조회하는 클라이언트는 IP 2개만 받습니다.
+
+     example.elb.ap-northeast-2.amazonaws.com  →  10.0.2.10  (AZ-B 노드)
+                                                  10.0.3.10  (AZ-C 노드)
+
+5  새 연결은 AZ-B, AZ-C 로만 갑니다.
+   AZ-A 로 이미 열려 있던 연결은 자연히 닫힐 때까지 유지됩니다.
+```
+
+3단계가 교재가 "자동 장애 조치"라고 부른 것입니다. 수단이 **DNS 응답에서 빼기**이므로 몇 가지
+성질이 따라옵니다.
+
+| 성질 | 내용 |
+|---|---|
+| 여러 AZ 가 전제 | 활성화한 AZ 가 하나면 내려줄 다른 IP 가 없습니다. 교재의 "단일 AZ 를 위해 설계" 와 "다른 AZ 로 자동 장애 조치" 가 함께 성립하지 않는 이유입니다 |
+| 새 연결부터 적용 | 이미 열려 있는 연결은 옮겨지지 않습니다. 또 클라이언트가 캐시한 이전 DNS 응답의 TTL(60초)이 만료되어야 반영됩니다 (2.4 절) |
+| 끌 수 있음 | 자동으로 항상 일어나는 일이 아닙니다. 아래 임계값 속성으로 정하고 `off` 로 둘 수 있습니다 |
+
+#### 임계값 두 개가 서로 다른 일을 합니다
+
+이름이 비슷해 헷갈리는 지점입니다. 둘 다 대상 그룹 속성이고 **ALB·NLB 공통**입니다.
+
+| 속성 | 임계값 미달일 때 하는 일 | 기본값 |
+|---|---|---|
+| `target_group_health.dns_failover.minimum_healthy_targets.count` | 그 영역 노드의 IP 를 **DNS 에서 비정상으로 표시**합니다. 클라이언트가 정상 영역으로만 갑니다 | **1** |
+| `target_group_health.dns_failover.minimum_healthy_targets.percentage` | 위와 같으나 백분율 기준입니다 | **`off`** |
+| `target_group_health.unhealthy_state_routing.minimum_healthy_targets.count` | DNS 는 그대로 두고, 노드가 **비정상 대상까지 포함해 모든 대상으로** 보냅니다 | **1** |
+| `target_group_health.unhealthy_state_routing.minimum_healthy_targets.percentage` | 위와 같으나 백분율 기준입니다 | **`off`** |
+
+앞의 둘은 **DNS 장애 조치**, 뒤의 둘은 **라우팅 장애 조치**입니다. `off` 로 두면 대상이 전부
+비정상이어도 그 영역을 DNS 에서 빼지 않습니다.
+
+#### 모든 AZ 가 비정상이면 반대로 동작합니다
+
+여기서 직관이 어긋납니다. 활성화한 **모든** AZ 에 정상 대상이 없으면 IP 를 전부 빼는 것이
+아니라 **전부 돌려줍니다.** NLB 문서는 이를 **fail-open** 이라고 부릅니다. 뺄 IP 가 전부라면
+서비스가 완전히 끊기므로, 비정상 대상에라도 보내는 편을 택하는 설계입니다.
+
+```text
+AZ-A 정상, AZ-B 정상, AZ-C 정상   → DNS 응답: IP 3개 (A, B, C)
+AZ-A 대상 전부 비정상             → DNS 응답: IP 2개 (B, C)        ← A 제거
+AZ-A, AZ-B 대상 전부 비정상       → DNS 응답: IP 1개 (C)           ← A, B 제거
+세 AZ 대상 전부 비정상            → DNS 응답: IP 3개 (A, B, C)     ← fail-open
+```
+
+> — 출처: [Target groups for your Application Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html)
+
+> — 출처: [Troubleshoot your Network Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-troubleshooting.html)
+
+#### ALB 와 NLB 의 차이 🆕
+
+메커니즘은 같지만 문서화 수준과 실제 효과가 갈리는 지점이 있습니다.
+
+| 항목 | ALB | NLB |
+|---|---|---|
+| 영역별 DNS 레코드 | 있습니다. `az.name-id.elb.region.amazonaws.com` | 있습니다. 같은 형식 |
+| DNS 장애 조치 / 라우팅 장애 조치 속성 | 있습니다. 기본값도 같습니다 | 있습니다 |
+| AWS 의 선제적 제거 | 여러 인프라 문제가 서비스에 영향을 줄 때 AWS 가 영역 IP 를 DNS 에서 **선제적으로 제거**한다고 문서화되어 있습니다 | 같은 문장이 문서화되어 있습니다 |
+| 전용 `영역 상태` 절 | **없습니다** | **있습니다.** `Load balancer zonal health` 절에서 실패 원인 네 가지를 열거합니다 |
+| `ZonalHealthStatus` CloudWatch 지표 | **없습니다** (ALB 지표 목록에 없음) | **있습니다** |
+| 교차 영역 기본값이 만드는 차이 | 로드 밸런서 수준에서 **항상 켜짐**이라 AZ-A 노드가 AZ-B·AZ-C 대상까지 씁니다. 대상 그룹 수준에서 끄지 않는 한 한 AZ 의 대상 손실이 곧 그 노드의 무용화로 이어지지 않습니다 (7.2 절) | **기본 꺼짐**이라 AZ-A 노드는 AZ-A 대상만 씁니다. AZ-A 대상이 전부 비정상이면 그 노드는 보낼 곳이 없어집니다 |
+
+마지막 행이 실무에서 체감되는 차이입니다. 교차 영역이 꺼진 NLB 는 **영역 격리가 강한 대신
+한 AZ 의 대상 손실이 그대로 드러나고**, 교차 영역이 켜진 ALB 는 그 손실을 다른 AZ 의 대상으로
+흡수합니다. 교재가 `영역별 격리` 를 NLB 의 특징으로 든 것은 이 성질을 가리킨 것으로 보이며,
+그 자체는 타당합니다. 부정확한 것은 "단일 AZ 를 위해 설계" 라는 표현입니다.
+
+NLB 문서만 영역 상태 확인 실패 원인을 명시합니다. 네 가지입니다.
+
+- 로드 밸런서에 정상 대상이 없음
+- 정상 대상 수가 설정한 최소값 미달
+- 영역 이동 또는 자동 영역 이동이 진행 중 (7.5 절)
+- **감지된 문제로 트래픽이 정상 영역으로 자동 이동 중**
+
+마지막 항목이 교재가 말하려던 자동 장애 조치에 가장 가깝습니다. AWS 가 영역 문제를 감지해
+트래픽을 정상 영역으로 자동으로 옮기는 동작은 실제로 존재합니다.
+
+> — 출처: [Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/network-load-balancers.html)
+
+> — 출처: [Zonal shift for Application Load Balancers](https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-shift.resource-types.app-load-balancers.html)
+
+### 7.5 영역 이동 🆕
 
 AZ 하나가 손상됐을 때 쓰는 별도 장치가 있습니다. **영역 이동(zonal shift)** 은
 **Amazon Application Recovery Controller(ARC)** 의 기능으로, 로드 밸런서 리소스를
 손상된 가용 영역에서 **한 번의 작업으로** 빼냅니다.
 
-- 교차 영역 로드 밸런싱을 **켠 NLB 와 끈 NLB 모두** 지원합니다
+7.4 절의 DNS 제거가 **AWS 가 알아서 하는 것**이라면, 영역 이동은 **운영자가 직접 시작하는
+것**입니다. 아직 상태 확인에 걸리지 않았지만 그 AZ 가 의심스러울 때 씁니다.
+
+- 교차 영역 로드 밸런싱을 **켠 것과 끈 것 모두** 지원합니다
 - 한 번에 **단일 AZ** 에 대해서만 시작할 수 있습니다
 - 교차 영역을 끈 상태에서 영역 이동을 하면 그 AZ 의 **대상 용량도 함께 빠집니다.**
   시작 전에 남은 AZ 의 용량을 확인해야 합니다
+
+🆕 두 유형 모두 **기본적으로 꺼져 있고 로드 밸런서마다 켜야 합니다.** ALB 는 로드 밸런서
+속성에서 ARC 영역 이동 통합을 활성화합니다.
+
+| 짚을 점 | 내용 |
+|---|---|
+| ALB 가 NLB 의 대상일 때 | 영역 이동을 **NLB 에서 시작해야** 합니다. ALB 에서 시작하면 NLB 가 그 이동을 인식하지 못하고 계속 ALB 로 트래픽을 보냅니다 |
+| 단일 AZ 대상 그룹 | 영역 이동이 **동작하지 않습니다** |
+| 손상된 AZ 의 대상 | 트래픽 수신을 멈추지만 **상태 확인은 계속 받습니다.** 이동이 만료되거나 취소되고 대상이 정상이면 라우팅이 재개됩니다 |
+
+> — 출처: [Zonal shift for Application Load Balancers](https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-shift.resource-types.app-load-balancers.html)
+
+> — 출처: [Zonal shift for Network Load Balancers](https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-shift.resource-types.network-load-balancers.html)
 
 > — 출처: [How Elastic Load Balancing works](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html)
 
@@ -750,7 +833,7 @@ VPC 10.1.0.0/22 + 10.1.4.0/22 + IPv6
 | 교재 위치 | 교재 기재 | 확인된 내용 |
 |---|---|---|
 | 슬라이드 19 표와 강사 노트 | 표는 ALB 의 "소스 IP 주소 유지"를 **"예"** 로 표시하고 각주를 달았는데, 같은 슬라이드 강사 노트는 **"ALB 는 소스 IP 주소를 보존하지 않는다"** 고 서술합니다 | ALB 는 소스 IP 를 그대로 전달하지 않고 `X-Forwarded-For` 헤더로 전달합니다 (4.2 절) |
-| NLB `영역별 격리` 강사 노트 | "**단일 가용 영역의 아키텍처를 위해 설계**되었다"고 하면서, 같은 문단에서 "AZ 에 장애가 발생하면 AWS 가 **자동으로 다른 정상 AZ 로 장애 조치**한다"고 서술합니다 | 두 문장이 함께 성립하지 않습니다. 활성화한 AZ 가 하나면 넘길 AZ 가 없습니다. 실제 동작은 AZ 를 옮기는 것이 아니라 **영역 상태 확인에 실패한 AZ 의 DNS 레코드를 Route 53 에서 제거**하는 것이고, **여러 AZ 를 활성화한 경우에만** 의미가 있습니다 (5.1 절) |
+| NLB `영역별 격리` 강사 노트 | "**단일 가용 영역의 아키텍처를 위해 설계**되었다"고 하면서, 같은 문단에서 "AZ 에 장애가 발생하면 AWS 가 **자동으로 다른 정상 AZ 로 장애 조치**한다"고 서술합니다 | 두 문장이 함께 성립하지 않습니다. 활성화한 AZ 가 하나면 넘길 AZ 가 없습니다. 실제 동작은 AZ 를 옮기는 것이 아니라 **비정상 AZ 노드의 IP 를 DNS 응답에서 빼는** 것이고, **여러 AZ 를 활성화한 경우에만** 의미가 있습니다. 또 이 동작은 **NLB 전용이 아니라 ALB 에도 적용**됩니다 (7.4 절) |
 | 슬라이드 18 강사 노트 | `TLD 종료` | `TLS 종료` 의 오기로 보입니다 |
 
 `영역별 격리` 는 교재 같은 문단의 **마지막 문장이 정확합니다.** "단일 가용 영역에서 NLB 를
@@ -760,8 +843,13 @@ VPC 10.1.0.0/22 + 10.1.4.0/22 + IPv6
 
 교재가 말하려던 자동 장애 조치 자체는 존재합니다. AWS 는 영역 상태 확인 실패 원인 중 하나로
 "감지된 문제로 트래픽이 정상 영역으로 자동 이동 중"을 문서화합니다. 다만 그 수단이 DNS
-레코드 제거이므로 **클라이언트 DNS 캐시가 만료된 뒤 반영**되고, **모든 AZ 가 비정상이면
-fail-open 으로 오히려 전체 IP 를 돌려줍니다.** 5.1 절에 함께 적었습니다.
+응답에서 빼기이므로 **클라이언트 DNS 캐시가 만료된 뒤 반영**되고, **모든 AZ 가 비정상이면
+fail-open 으로 오히려 전체 IP 를 돌려줍니다.**
+
+교재가 `영역별 격리` 를 NLB 의 특징으로 든 것 자체는 타당합니다. NLB 는 교차 영역이 **기본
+꺼짐**이라 한 AZ 의 노드가 그 AZ 의 대상만 쓰고, 그래서 영역 사이 격리가 강합니다. 부정확한
+것은 이 성질을 "단일 AZ 를 위해 설계되었다"로 표현한 부분입니다. 자세한 내용은 7.4 절에
+ALB 와 나란히 놓고 정리했습니다.
 
 > — 출처: [Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/network-load-balancers.html)
 
