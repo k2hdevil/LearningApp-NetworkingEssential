@@ -103,7 +103,7 @@
 ```text
 99.99% 시스템이 각각 99.99% 인 독립 시스템 두 개에 하드 종속
 
-0.9999 × 0.9999 × 0.9999 = 0.9997  →  99.97%
+0.9999 x 0.9999 x 0.9999 = 0.9997  ->  99.97%
 ```
 
 **독립 중복 구성 요소는 가용성을 올립니다.** 서로 다른 AZ 의 중복 리소스가 그 예입니다.
@@ -222,16 +222,19 @@ IaC 의 이점은 네 가지입니다.
 `www.example.com` 을 처음 입력했을 때 **몇 밀리초 안에** 벌어지는 일입니다.
 
 ```text
-① 사용자 브라우저 ──────────────→ DNS 확인자 (보통 ISP 관리)
-②                                    └──→ DNS 루트 네임 서버
-                                          └─ ".com 네임 서버 목록" 반환
-③                                    └──→ .com 최상위 도메인 네임 서버
-④                                          └─ "example.com 의 Route 53 네임 서버 4개" 반환
-⑤                                    └──→ Route 53 네임 서버 (하나 선택)
-                                          └─ example.com 호스팅 영역에서
-                                             www.example.com 레코드 조회 → 192.0.2.3
-⑥ 사용자 브라우저 ←──── 192.0.2.3 ── DNS 확인자
-   → HTTP/HTTPS 트래픽 시작
+(1) Browser  --->  DNS resolver      (보통 ISP 가 운영합니다)
+                         |
+(2)                      +-->  DNS root name server
+                         |     returns: .com name server list
+(3)                      +-->  .com TLD name server
+(4)                      |     returns: 4 Route 53 name servers
+(5)                      +-->  Route 53 name server (1 of 4)
+                               looks up www.example.com in the
+                               example.com hosted zone
+                               answer: 192.0.2.3
+
+(6) Browser  <---  192.0.2.3  ---  DNS resolver
+    브라우저가 HTTP/HTTPS 요청을 시작합니다
 ```
 
 ### 5.1 캐싱이 여기서 작동합니다
@@ -718,7 +721,7 @@ Route 53 이 그걸 기다리지 않기 때문에 **복원성과 가용성이 �
 리소스 하나로 트래픽을 보냅니다.
 
 ```text
-DNS 쿼리 → Route 53 → us-east-1 의 ELB → Auto Scaling 그룹
+DNS 쿼리 -> Route 53 -> us-east-1 의 ELB -> Auto Scaling 그룹
 ```
 
 실습 3 에서 먼저 이것을 구성하고 DNS 확인을 테스트한 뒤, 고급 정책으로 넘어갑니다.
@@ -730,11 +733,14 @@ DNS 쿼리 → Route 53 → us-east-1 의 ELB → Auto Scaling 그룹
 기본 리소스가 비정상이면 보조 리소스로 보냅니다.
 
 ```text
-[정상]   DNS 쿼리 → Route 53 → us-east-1 ELB → ASG   ✓
-                              (eu-west-2 는 대기)
+[정상]
+  DNS query  -->  Route 53  -->  us-east-1 ELB  -->  ASG
+                                 (eu-west-2 는 대기)
 
-[장애]   DNS 쿼리 → Route 53 ─✗ us-east-1 ELB → ASG   ✗ 상태 확인 실패
-                              → eu-west-2 ELB → ASG   ✓ 전환
+[장애]
+  DNS query  -->  Route 53   X   us-east-1 ELB      상태 확인 실패
+                       |
+                       +----->   eu-west-2 ELB  -->  ASG      전환
 ```
 
 **상태 확인 없이는 장애 조치가 동작하지 않습니다.** 7장과 이 정책은 한 쌍입니다.
@@ -746,9 +752,10 @@ DNS 쿼리 → Route 53 → us-east-1 의 ELB → Auto Scaling 그룹
 골라 응답합니다.
 
 ```text
-example.com 의 DNS 쿼리 → Amazon Route 53
-                            ├─ us-east-1 : 137밀리초
-                            └─ eu-west-2 :  76밀리초   ← 선택
+DNS query for example.com  -->  Amazon Route 53
+                                  |
+                                  +--  us-east-1 : 137 ms
+                                  +--  eu-west-2 :  76 ms   <- 선택
 ```
 
 **주의할 점이 두 가지 있습니다.**
@@ -801,13 +808,17 @@ example.com 의 DNS 쿼리 → Amazon Route 53
 ### 9.3 아키텍처
 
 ```text
-[시작]  사용자 ──→ 리전 A: ALB → Auto Scaling 그룹 → Aurora
-        사용자 ──→ 리전 B: ALB → Auto Scaling 그룹 → Aurora
-                    (사용자가 각 리전의 ALB 로 직접 접근)
+[시작]
+  Users  -->  Region A : ALB --> Auto Scaling group --> Aurora
+  Users  -->  Region B : ALB --> Auto Scaling group --> Aurora
+              사용자가 각 리전의 ALB 로 직접 접근합니다
 
-[완성]  사용자 ──→ Amazon Route 53 ──┬──→ 리전 A: ALB → ASG → Aurora
-                    │                └──→ 리전 B: ALB → ASG → Aurora
-                    └─ 각 리전에 상태 확인
+[완성]
+  Users  -->  Amazon Route 53
+                    |
+                    +-->  Region A : ALB --> ASG --> Aurora
+                    +-->  Region B : ALB --> ASG --> Aurora
+              각 리전에 상태 확인을 붙입니다
 ```
 
 **무엇이 달라지는가.** 시작 상태에서는 사용자가 어느 리전으로 가야 하는지 스스로

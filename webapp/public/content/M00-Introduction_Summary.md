@@ -96,11 +96,12 @@ Terry 의 상황이 이 과정의 대상 수강생과 비슷하다는 점이 포
 
 ```text
 AWS 클라우드 / 리전
-└─ VPC  10.1.0.0/22
-   ├─ 인터넷 게이트웨이
-   ├─ 퍼블릭 서브넷 ── Auto Scaling 그룹 (웹 서버)
-   ├─ 프라이빗 서브넷 ── Aurora
-   └─ 프라이빗 서브넷 ── Aurora
+|
++-- VPC  10.1.0.0/22
+     +-- Internet gateway
+     +-- Public subnet    Auto Scaling group (web servers)
+     +-- Private subnet   Aurora
+     +-- Private subnet   Aurora
 ```
 
 이 다이어그램만 보고 문제점을 몇 개 찾을 수 있는지 세어 보세요. 모듈 1을 읽고 나면

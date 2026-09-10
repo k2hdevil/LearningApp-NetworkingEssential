@@ -66,15 +66,18 @@
 
 ```text
 VPC  10.1.0.0/22 + 10.1.4.0/22 + IPv6
-├─ AZ A
-│   ├─ 퍼블릭 서브넷   ── ALB, NAT 게이트웨이, 배스천 호스트
-│   ├─ 프라이빗 서브넷 ── 웹 서버 (Auto Scaling 그룹)
-│   └─ 프라이빗 서브넷 ── Aurora
-└─ AZ B
-    ├─ 퍼블릭 서브넷   ── ALB, NAT 게이트웨이
-    ├─ 프라이빗 서브넷 ── 웹 서버 (Auto Scaling 그룹)
-    └─ 프라이빗 서브넷 ── Aurora
-인터넷 게이트웨이 + 송신 전용 인터넷 게이트웨이
+|
++-- AZ A
+|    +-- Public subnet    ALB, NAT gateway, bastion host
+|    +-- Private subnet   Web servers (Auto Scaling group)
+|    +-- Private subnet   Aurora
+|
++-- AZ B
+     +-- Public subnet    ALB, NAT gateway
+     +-- Private subnet   Web servers (Auto Scaling group)
+     +-- Private subnet   Aurora
+
+Internet gateway + egress-only internet gateway
 ```
 
 **8단계 순서에 담긴 논리**를 짚어 두면 좋습니다. 주소를 먼저 확보하고(1\~2),
@@ -91,8 +94,14 @@ VPC  10.1.0.0/22 + 10.1.4.0/22 + IPv6
 3. **CloudFront 오리진을 보호합니다**
 
 ```text
-[시작]  사용자 ─────────────────→ ALB → 웹 서버
-[완성]  사용자 → 엣지 로케이션 → 리전 엣지 캐시 → ALB → 웹 서버
+[시작]
+  Users  ------------------------------------>  ALB  -->  Web servers
+
+[완성]
+  Users  -->  Edge location  -->  Regional edge cache  -->  ALB
+                                                             |
+                                                             v
+                                                        Web servers
 ```
 
 3단계가 왜 필요한지 다시 확인하세요. CloudFront 를 붙여도 **오리진이 인터넷에서
@@ -109,9 +118,12 @@ VPC  10.1.0.0/22 + 10.1.4.0/22 + IPv6
 5. 고급 라우팅 정책에 대한 DNS 확인 테스트를 수행합니다
 
 ```text
-사용자 → Amazon Route 53 ──┬──→ 리전 A: VPC / ALB / Auto Scaling 그룹 / Aurora
-                            └──→ 리전 B: VPC / ALB / Auto Scaling 그룹 / Aurora
-         각 리전에 상태 확인
+Users  -->  Amazon Route 53
+                |
+        +-->  Region A : VPC / ALB / Auto Scaling group / Aurora
+        +-->  Region B : VPC / ALB / Auto Scaling group / Aurora
+
+각 리전에 상태 확인을 붙입니다
 ```
 
 **단순 → 고급 순서**도 의도적입니다. 먼저 DNS 가 제대로 확인되는 기준선을 만들고,

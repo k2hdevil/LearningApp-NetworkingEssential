@@ -74,11 +74,16 @@
 **왜 8개인가.** 문서가 이유를 밝혀 두었습니다. 순서대로 보면 이렇습니다.
 
 ```text
-1. 영역을 활성화한다        →  ELB 가 그 영역마다 로드 밸런서 노드를 만든다
-2. 노드가 놓인다            →  ELB 가 그 서브넷에 네트워크 인터페이스를 만든다
-3. 인터페이스가 생긴다      →  서브넷의 IP 를 하나 쓴다
-4. 트래픽이 늘어난다        →  로드 밸런서가 확장(scale out)한다 = IP 가 더 필요하다
-5. 여유 IP 가 없다          →  확장이 막히고, 노드 교체 시도가 어려워진다
+1  영역을 활성화한다
+     -> ELB 가 그 영역마다 로드 밸런서 노드를 만든다
+2  노드가 놓인다
+     -> ELB 가 그 서브넷에 네트워크 인터페이스를 만든다
+3  인터페이스가 생긴다
+     -> 서브넷의 IP 를 하나 쓴다
+4  트래픽이 늘어난다
+     -> 로드 밸런서가 확장한다 = IP 가 더 필요하다
+5  여유 IP 가 없다
+     -> 확장이 막히고, 노드 교체 시도가 어려워진다
 ```
 
 그래서 AWS 는 **확장 여유분으로 서브넷당 여유 IP 8개**를 요구합니다. 로드 밸런서는 이
@@ -137,9 +142,10 @@
 모든 유형이 공유하는 개념입니다. 순서대로 따라가면 요청의 여정이 됩니다.
 
 ```text
-클라이언트 → [리스너] → [규칙] → [대상 그룹] → 대상
-                                    ↑
-                                [상태 확인]
+Client  -->  [Listener]  -->  [Rule]  -->  [Target group]  -->  Target
+                                                 ^
+                                                 |
+                                          [Health check]
 ```
 
 ### 3.1 리스너
@@ -261,14 +267,14 @@ Elastic Load Balancing 의 **현행 세대는 세 가지**입니다. 이 과정�
 ```text
 [ NLB ]  패킷의 소스 IP 를 그대로 둡니다
 
-  클라이언트 203.0.113.9  ──→  NLB  ──→  대상
-                                         소스 IP = 203.0.113.9   (그대로)
+  Client 203.0.113.9  -->  NLB  -->  Target
+                                     source IP = 203.0.113.9
 
-[ ALB ]  연결을 대신 맺고, 클라이언트 IP 는 헤더에 적어 보냅니다
+[ ALB ]  연결을 대신 맺고 클라이언트 IP 는 헤더에 적습니다
 
-  클라이언트 203.0.113.9  ──→  ALB  ──→  대상
-                                         소스 IP = ALB 의 IP
-                                         X-Forwarded-For: 203.0.113.9
+  Client 203.0.113.9  -->  ALB  -->  Target
+                                     source IP = ALB 의 IP
+                                     X-Forwarded-For: 203.0.113.9
 ```
 
 **NLB — 패킷 수준에서 보존합니다.** 대상 그룹 속성 `preserve_client_ip.enabled` 로
@@ -350,10 +356,11 @@ XFF 값이 `클라이언트IP:포트` 형태가 되고, IPv6 는 주소를 대�
 계층 4 에서 **프로토콜과 포트**만 보고 대상을 고릅니다.
 
 ```text
-클라이언트 ──→ NLB
-              ├─ TCP:80   → 대상 그룹 (ALB)
-              ├─ UDP:90   → 대상 그룹 (컨테이너)
-              └─ TCP:443  → 대상 그룹 (EC2 / 컨테이너 / IP / ALB)
+Client  -->  NLB
+               |
+               +--  TCP:80   -->  Target group (ALB)
+               +--  UDP:90   -->  Target group (containers)
+               +--  TCP:443  -->  Target group (EC2 / IP / ALB)
 ```
 
 ### 5.1 여섯 가지 특징 🔄
@@ -501,13 +508,15 @@ Application Load Balancer 문서에 **현재 존재하는 기능으로 나열되
 | **꺼짐** | 25% | 6.25% | 각 노드가 자기 50% 를 **자기 AZ 대상에만** 나눕니다 |
 
 ```text
-[켜짐]  노드A(50%) ──┬──→ AZ1 대상 2개
-                     └──→ AZ2 대상 8개      각 대상 10%
-        노드B(50%) ──┬──→ AZ1 대상 2개
-                     └──→ AZ2 대상 8개
+[켜짐]
+  Node A (50%)  --+-->  AZ1  2 targets
+                  +-->  AZ2  8 targets        대상마다 10%
+  Node B (50%)  --+-->  AZ1  2 targets
+                  +-->  AZ2  8 targets
 
-[꺼짐]  노드A(50%) ─────→ AZ1 대상 2개      각 대상 25%
-        노드B(50%) ─────→ AZ2 대상 8개      각 대상 6.25%
+[꺼짐]
+  Node A (50%)  ------>  AZ1  2 targets       대상마다 25%
+  Node B (50%)  ------>  AZ2  8 targets       대상마다 6.25%
 ```
 
 ### 7.2 유형별 기본값 🔄
@@ -545,12 +554,13 @@ AZ-A, AZ-B, AZ-C 세 AZ 를 활성화한 로드 밸런서에서 **AZ-A 의 대�
 하겠습니다.
 
 ```text
-1  로드 밸런서는 활성화한 AZ 마다 노드를 두고, 노드마다 IP 가 하나씩 있습니다.
-   이름을 조회하면 IP 3개가 돌아옵니다.
+1  로드 밸런서는 활성화한 AZ 마다 노드를 두고, 노드마다 IP 가
+   하나씩 있습니다. 이름을 조회하면 IP 3개가 돌아옵니다.
 
-     example.elb.ap-northeast-2.amazonaws.com  →  10.0.1.10  (AZ-A 노드)
-                                                  10.0.2.10  (AZ-B 노드)
-                                                  10.0.3.10  (AZ-C 노드)
+     example.elb.ap-northeast-2.amazonaws.com
+       ->  10.0.1.10   (AZ-A 노드)
+           10.0.2.10   (AZ-B 노드)
+           10.0.3.10   (AZ-C 노드)
 
 2  AZ-A 의 정상 대상 수가 임계값 아래로 떨어집니다.
 
@@ -559,8 +569,9 @@ AZ-A, AZ-B, AZ-C 세 AZ 를 활성화한 로드 밸런서에서 **AZ-A 의 대�
 
 4  이후 이름을 조회하는 클라이언트는 IP 2개만 받습니다.
 
-     example.elb.ap-northeast-2.amazonaws.com  →  10.0.2.10  (AZ-B 노드)
-                                                  10.0.3.10  (AZ-C 노드)
+     example.elb.ap-northeast-2.amazonaws.com
+       ->  10.0.2.10   (AZ-B 노드)
+           10.0.3.10   (AZ-C 노드)
 
 5  새 연결은 AZ-B, AZ-C 로만 갑니다.
    AZ-A 로 이미 열려 있던 연결은 자연히 닫힐 때까지 유지됩니다.
@@ -582,10 +593,17 @@ AZ-A, AZ-B, AZ-C 세 AZ 를 활성화한 로드 밸런서에서 **AZ-A 의 대�
 서비스가 완전히 끊기므로, 비정상 대상에라도 보내는 편을 택하는 설계입니다.
 
 ```text
-AZ-A 정상, AZ-B 정상, AZ-C 정상   → DNS 응답: IP 3개 (A, B, C)
-AZ-A 대상 전부 비정상             → DNS 응답: IP 2개 (B, C)        ← A 제거
-AZ-A, AZ-B 대상 전부 비정상       → DNS 응답: IP 1개 (C)           ← A, B 제거
-세 AZ 대상 전부 비정상            → DNS 응답: IP 3개 (A, B, C)     ← fail-open
+AZ-A 정상, AZ-B 정상, AZ-C 정상
+  -> DNS 응답: IP 3개 (A, B, C)
+
+AZ-A 대상 전부 비정상
+  -> DNS 응답: IP 2개 (B, C)          A 제거
+
+AZ-A, AZ-B 대상 전부 비정상
+  -> DNS 응답: IP 1개 (C)             A, B 제거
+
+세 AZ 대상 전부 비정상
+  -> DNS 응답: IP 3개 (A, B, C)       fail-open
 ```
 
 > — 출처: [Target groups for your Application Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html)
@@ -670,10 +688,13 @@ aws elbv2 modify-load-balancer-attributes \
 | **크기 조정 정책** | 언제 늘리고 줄일지 결정합니다 |
 
 ```text
-      최대 4  ─────────────────────────
-                    ╱‾‾‾╲
-원하는 용량 2  ──────╱     ╲──────────
-      최소 1  ─────────────────────────
+  max 4        ----------------------------------
+
+                        _____
+                      _/     \_
+  desired 2    ------/         \----------------
+
+  min 1        ----------------------------------
 ```
 
 예를 들어 최소 1, 원하는 용량 2, 최대 4 라면 인스턴스 수는 정책에 따라 1\~4 사이에서
@@ -716,12 +737,14 @@ AWS 는 시작 템플릿으로 마이그레이션할 것을 권장합니다. 교
 ### 8.4 ELB 와 함께 쓰기
 
 ```text
-          로드 밸런서
-               │
-      ┌────────┴────────┐
-   [AZ 1 서브넷]     [AZ 2 서브넷]
-   인스턴스 인스턴스   인스턴스 인스턴스
-      └──── Auto Scaling 그룹 ────┘
+                Load balancer
+                      |
+         +------------+------------+
+         |                         |
+  [ AZ 1 subnet ]           [ AZ 2 subnet ]
+   Instance  Instance        Instance  Instance
+         |                         |
+         +---- Auto Scaling group --+
 ```
 
 - **Auto Scaling 그룹이 로드 밸런서의 대상 그룹이 될 수 있습니다**
@@ -750,11 +773,13 @@ AWS 는 시작 템플릿으로 마이그레이션할 것을 권장합니다. 교
 ### 9.2 시작 상태
 
 ```text
-VPC 10.1.0.0/22
-├─ 퍼블릭 서브넷 10.1.0.0/24 ── Auto Scaling 그룹(웹 서버), 배스천 호스트
-├─ 프라이빗 서브넷 10.1.1.0/24 ── Aurora
-└─ 프라이빗 서브넷 10.1.2.0/24 ── Aurora
-인터넷 게이트웨이
+VPC  10.1.0.0/22
+|
++-- Public subnet   10.1.0.0/24   ASG (web servers), bastion host
++-- Private subnet  10.1.1.0/24   Aurora
++-- Private subnet  10.1.2.0/24   Aurora
+
+Internet gateway
 ```
 
 문제는 모듈 1에서 본 그대로입니다. `/22` 는 너무 작고, 웹 서버가 퍼블릭 서브넷에 직접
@@ -776,16 +801,19 @@ VPC 10.1.0.0/22
 ### 9.4 완성된 아키텍처
 
 ```text
-VPC 10.1.0.0/22 + 10.1.4.0/22 + IPv6
-├─ AZ A
-│   ├─ 퍼블릭 서브넷   ── ALB, NAT 게이트웨이, 배스천 호스트
-│   ├─ 프라이빗 서브넷 ── 웹 서버 (Auto Scaling 그룹)
-│   └─ 프라이빗 서브넷 ── Aurora
-└─ AZ B
-    ├─ 퍼블릭 서브넷   ── ALB, NAT 게이트웨이
-    ├─ 프라이빗 서브넷 ── 웹 서버 (Auto Scaling 그룹)
-    └─ 프라이빗 서브넷 ── Aurora
-인터넷 게이트웨이 + 송신 전용 인터넷 게이트웨이
+VPC  10.1.0.0/22 + 10.1.4.0/22 + IPv6
+|
++-- AZ A
+|    +-- Public subnet    ALB, NAT gateway, bastion host
+|    +-- Private subnet   Web servers (Auto Scaling group)
+|    +-- Private subnet   Aurora
+|
++-- AZ B
+     +-- Public subnet    ALB, NAT gateway
+     +-- Private subnet   Web servers (Auto Scaling group)
+     +-- Private subnet   Aurora
+
+Internet gateway + egress-only internet gateway
 ```
 
 서브넷 CIDR 은 `10.1.0.0/24` \~ `10.1.5.0/24` 범위에서 각각 IPv6 접두사와 함께

@@ -462,14 +462,14 @@ BGP 테이블에 들어갑니다. 이것이 온프레미스 → VPC 방향을 �
 연관과 전파의 차이를 확인하기 좋습니다.
 
 ```bash
-# 연관: 이 연결로 들어온 패킷이 조회할 테이블을 지정합니다 (연결당 하나)
-# VPC A 연결은 rtb-spoke 를 보게 합니다
+# 연관: 이 연결로 들어온 패킷이 조회할 테이블 (연결당 하나)
+# VPC A 연결은 rtb-spoke 를 봅니다
 aws ec2 associate-transit-gateway-route-table \
   --transit-gateway-route-table-id tgw-rtb-spoke \
   --transit-gateway-attachment-id tgw-attach-a
 
-# 전파: 이 연결의 경로를 어느 테이블에 심을지 지정합니다 (여러 테이블 가능)
-# VPC A 의 10.1.0.0/16 을 rtb-vpn 에만 심습니다. rtb-spoke 에는 심지 않습니다
+# 전파: 이 연결의 경로를 어느 테이블에 심을지 (여러 테이블 가능)
+# VPC A 의 10.1.0.0/16 을 rtb-vpn 에만 심습니다
 aws ec2 enable-transit-gateway-route-table-propagation \
   --transit-gateway-route-table-id tgw-rtb-vpn \
   --transit-gateway-attachment-id tgw-attach-a
@@ -678,7 +678,7 @@ VPC 에 게이트웨이 엔드포인트도 인터넷 게이트웨이도 없이, 
 만들 수 있습니다.** 내 VPC 안에서 실행되는 것처럼 프라이빗하게 접근합니다.
 
 ```bash
-# us-east-1 의 VPC 에서 us-west-2 의 Amazon S3 로 인터페이스 엔드포인트 생성
+# us-east-1 VPC 에서 us-west-2 의 S3 로 엔드포인트 생성
 aws ec2 create-vpc-endpoint \
   --vpc-id vpc-id \
   --service-name com.amazonaws.us-west-2.s3 \
@@ -691,9 +691,10 @@ aws ec2 create-vpc-endpoint \
 `--service-region` 이 새로 붙은 부분입니다. 어떤 서비스가 지원되는지는 CLI 로 확인합니다.
 
 ```bash
-# us-east-1 사용자가 us-west-2 서비스 리전으로 쓸 수 있는 서비스 이름 조회
+# us-west-2 를 서비스 리전으로 쓸 수 있는 서비스 이름 조회
 aws ec2 describe-vpc-endpoint-services \
-  --filters Name=service-type,Values=Interface Name=owner,Values=amazon \
+  --filters Name=service-type,Values=Interface \
+            Name=owner,Values=amazon \
   --region us-east-1 \
   --service-region us-west-2 \
   --query ServiceNames
@@ -979,11 +980,13 @@ Amazon Route 53**. 이 서비스들은 인터넷이 아니라 **AWS 글로벌 �
 퍼블릭 인터넷의 혼잡과 예측 불가능성이 사용자 경험을 망치는 주요 원인입니다.
 
 ```text
-[기존 경로]  사용자 → 로컬 ISP → 네트워크 A → B → C → D → E → 오리진
-             홉이 많을수록 지연 시간이 누적되고 성능이 떨어집니다
+[기존 경로]
+  사용자 -> 로컬 ISP -> 네트워크 A -> B -> C -> D -> E -> 오리진
+  홉이 많을수록 지연 시간이 누적되고 성능이 떨어집니다
 
-[AWS 글로벌 네트워크]  사용자 → 로컬 ISP → 엣지 로케이션 ══(AWS 백본)══ 오리진
-             홉이 줄고 경로가 예측 가능해집니다
+[AWS 글로벌 네트워크]
+  사용자 -> 로컬 ISP -> 엣지 로케이션 ==(AWS 백본)== 오리진
+  홉이 줄고 경로가 예측 가능해집니다
 ```
 
 > 교재 슬라이드 27 본문에는 "다중 홉은 지연 시간이 짧고 성능이 우수하다고 간주합니다"라는
@@ -1197,21 +1200,23 @@ CachingDisabled
 **캐시 누락**
 
 ```text
-뷰어 → CloudFront: GET /index.html  (Host: www.example.com)
-       캐시 조회 → 없음
-CloudFront → 오리진: GET /index.html  (Host: origin.example.com)
-오리진 → CloudFront: 200 OK
-                     Cache-Control: max-age=86400
-                     Last-Modified: 2023-01-01
-CloudFront → 뷰어:   200 OK  (그리고 엣지에 캐시)
+뷰어 -> CloudFront:  GET /index.html
+                     Host: www.example.com
+  캐시 조회 -> 없음
+CloudFront -> 오리진:  GET /index.html
+                       Host: origin.example.com
+오리진 -> CloudFront:  200 OK
+                       Cache-Control: max-age=86400
+                       Last-Modified: 2023-01-01
+CloudFront -> 뷰어:  200 OK   (그리고 엣지에 캐시)
 ```
 
 **캐시 적중**
 
 ```text
-뷰어 → CloudFront: GET /index.html
-       캐시 조회 → 있음
-CloudFront → 뷰어:   200 OK   (오리진에 가지 않습니다)
+뷰어 -> CloudFront:  GET /index.html
+  캐시 조회 -> 있음
+CloudFront -> 뷰어:  200 OK   (오리진에 가지 않습니다)
 ```
 
 ### 7.8 리전 엣지 캐시
