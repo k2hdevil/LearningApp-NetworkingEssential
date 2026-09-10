@@ -518,7 +518,7 @@ Transit Gateway 당 CIDR 블록 5개, 최대 5,000개 VPC 연결이라는 수치
 |---|---|---|
 | **연결 방식** | **라우팅 테이블의 대상** (접두사 목록) | **ENI 에 할당된 프라이빗 IP 주소** |
 | **연결 수준** | **VPC 수준** | **서브넷 수준** |
-| **온프레미스 액세스** | 불가 | **가능** |
+| **온프레미스 액세스** | 불가 | **가능** (4.5 절) |
 | **PrivateLink** | 지원하지 않음 | **AWS PrivateLink 기반** |
 | **보안 그룹** | 연결할 수 없음 | **연결 가능** |
 | **지원 서비스** | **Amazon S3, Amazon DynamoDB** 만 | 훨씬 많은 서비스 |
@@ -586,14 +586,88 @@ Amazon SageMaker 런타임, AWS Secrets Manager, AWS Systems Manager 등.
 호스팅하는 서비스**와 AWS Marketplace 파트너 서비스도 포함됩니다. 즉 PrivateLink 는
 "내 서비스를 다른 계정에 프라이빗하게 노출하는" 용도로도 씁니다.
 
-### 4.5 문서 위치가 바뀌었습니다 🔄
+### 4.5 하이브리드 연결: 온프레미스에서 S3 에 프라이빗 접근 🆕
 
-교재는 "VPC 엔드포인트"를 독립 주제로 다룹니다. 현행 문서 체계에서는
-**AWS PrivateLink 사용 설명서**로 편입되었습니다. 교재의 용어(게이트웨이 엔드포인트,
-인터페이스 엔드포인트)는 그대로 쓰이고 있으니 개념은 바뀌지 않았습니다. 문서를 찾을 때
-"VPC endpoint" 로 검색해도 PrivateLink 가이드로 안내됩니다.
+4.2 절 표에서 인터페이스 엔드포인트의 차별점으로 "온프레미스 액세스 가능"을 적었습니다.
+이것이 실제로 무엇을 뜻하는지, 그리고 **지금도 유효한지**를 봅니다. 유효합니다.
 
-> — 출처: [What is AWS PrivateLink?](https://docs.aws.amazon.com/vpc/latest/privatelink/what-is-privatelink.html)
+현행 S3 문서는 인터페이스 엔드포인트가 **VPN 과 Direct Connect 를 통해 온프레미스
+애플리케이션에서 직접 접근 가능**하고, **VPC 피어링이나 Transit Gateway 를 통해 다른
+리전의 VPC** 에서도 접근 가능하다고 명시합니다. 게이트웨이 엔드포인트는 둘 다 못 합니다.
+
+| | 게이트웨이 엔드포인트 | 인터페이스 엔드포인트 |
+|---|---|---|
+| **온프레미스에서 접근** | **불가** | **가능** (Direct Connect, Site-to-Site VPN) |
+| **다른 리전 VPC 에서 접근** | 불가 | 가능 (VPC 피어링 또는 Transit Gateway) |
+| 쓰는 IP 주소 | S3 의 **퍼블릭** IP 주소 | 내 VPC 의 **프라이빗** IP 주소 |
+| DNS 이름 | S3 기본 DNS 이름 그대로 | **엔드포인트별 S3 DNS 이름이 필요합니다** |
+| 요금 | 없음 | 있음 |
+
+**두 경우 모두 트래픽은 AWS 네트워크에 머무릅니다.** 차이는 "누가 닿을 수 있는가"와
+"어떤 IP·DNS 이름을 쓰는가"입니다.
+
+#### 4.5.1 패턴 A — 인터페이스 엔드포인트만 두는 경우
+
+VPC 에 게이트웨이 엔드포인트도 인터넷 게이트웨이도 없이, **온프레미스와 VPC 안 모두**
+인터페이스 엔드포인트를 지나 S3 로 갑니다.
+
+```text
+  [ On-premises ]            [ VPC A ]            [ Amazon S3 ]
+
+   App server                +------------------+
+       |                     | Interface        |
+       +-- DX / VPN -------->| endpoint (ENI)   | ==>  S3
+                             | 10.0.1.6         |
+   In-VPC app -------------->|                  |
+                             +------------------+
+
+  양쪽 모두 엔드포인트별 S3 DNS 이름을 씁니다
+```
+
+온프레미스 애플리케이션이 Direct Connect 또는 Site-to-Site VPN 으로 VPC 안의 엔드포인트에
+데이터를 보내고, **PrivateLink 가 엔드포인트에서 S3 까지 AWS 네트워크로** 옮깁니다.
+
+#### 4.5.2 패턴 B — 게이트웨이와 인터페이스를 함께 두는 경우
+
+**인터페이스 엔드포인트는 요금이 부과되고 게이트웨이 엔드포인트는 무료**입니다. 그래서
+문서가 권하는 비용 최적화 구성이 이것입니다. 두 유형은 **같은 VPC 에 함께 둘 수 있습니다.**
+
+```text
+  On-premises app  -- DX / VPN -->   Interface endpoint  ==>  S3
+                                     엔드포인트별 DNS · 요금 발생
+
+  In-VPC app       -------------->   Gateway endpoint    ==>  S3
+                                     S3 기본 DNS · 요금 없음
+```
+
+**VPC 안 트래픽은 무료인 게이트웨이 엔드포인트로, 온프레미스 트래픽만 인터페이스
+엔드포인트로** 보냅니다. 이때 온프레미스 애플리케이션이 엔드포인트별 DNS 이름을 쓰도록
+고쳐야 합니다.
+
+#### 4.5.3 DNS 를 어떻게 푸는가
+
+여기가 실제로 막히는 지점입니다. 인터페이스 엔드포인트의 프라이빗 IP 는 VPC 안에서만
+의미가 있는데, 이름을 물어보는 것은 온프레미스 리졸버입니다. 방법이 두 가지입니다.
+
+| 방법 | 온프레미스 DNS 를 고쳐야 하나 | 내용 |
+|---|---|---|
+| **엔드포인트별 DNS 이름을 직접 쓴다** | **고치지 않아도 됩니다** | 이 이름들은 **S3 퍼블릭 DNS 도메인에서 프라이빗 IP 로 확인**됩니다. 대신 애플리케이션이 기본 이름 대신 이 이름을 쓰도록 고쳐야 합니다 |
+| **프라이빗 DNS + Route 53 Resolver 인바운드 엔드포인트** | 온프레미스 리졸버가 쿼리를 전달하도록 구성합니다 | 애플리케이션은 `s3.us-east-1.amazonaws.com` 같은 **기본 이름을 그대로** 씁니다. **인바운드 Resolver 엔드포인트**가 온프레미스 DNS 쿼리를 VPC 의 Route 53 Resolver 로 전달합니다 |
+
+엔드포인트별 이름은 두 종류가 생깁니다.
+
+```text
+리전(Regional) 이름
+  vpce-1a2b3c4d-5e6f.s3.us-east-1.vpce.amazonaws.com
+
+영역(Zonal) 이름
+  vpce-1a2b3c4d-5e6f-us-east-1a.s3.us-east-1.vpce.amazonaws.com
+```
+
+영역 이름은 **가용 영역을 격리하는 아키텍처**에서 씁니다. 장애 격리 목적이거나 리전 간
+데이터 전송 비용을 줄이려는 경우입니다.
+
+> — 출처: [AWS PrivateLink for Amazon S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html)
 
 ### 4.6 리전 간 인터페이스 엔드포인트 🆕
 
@@ -1560,7 +1634,8 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 | 내 서비스를 다른 계정에 프라이빗하게 노출하고 싶고, 서비스가 하나이며 TCP·UDP 로 충분하다 | **VPC 엔드포인트 서비스** (AWS PrivateLink, 계층 4) |
 | 서비스가 여럿이고 요청 내용으로 라우팅하거나 IAM 으로 통제해야 한다 | **Amazon VPC Lattice** (계층 7) |
 | 프라이빗 서브넷에서 S3·DynamoDB 만 쓰면 된다 | **게이트웨이 엔드포인트** (추가 요금 없음) |
-| 온프레미스에서도 접근하거나 보안 그룹으로 제어해야 한다 | **인터페이스 엔드포인트** |
+| 온프레미스에서도 접근하거나 보안 그룹으로 제어해야 한다 | **인터페이스 엔드포인트** (4.5 절) |
+| 온프레미스는 S3 에 프라이빗으로 붙여야 하지만 VPC 안 트래픽 비용은 아끼고 싶다 | **게이트웨이 + 인터페이스 병행** (4.5 절) |
 | 다른 리전의 AWS 서비스에 프라이빗하게 접근해야 한다 | **리전 간 인터페이스 엔드포인트** (다만 리전 내가 더 빠르고 저렴합니다) |
 | HTTP 콘텐츠를 사용자 가까이서 제공하고 싶다 | **Amazon CloudFront** |
 | CloudFront 오리진을 인터넷에서 완전히 닫고 싶다 | **CloudFront VPC 오리진** |
@@ -1576,6 +1651,7 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 | A-B, B-C 가 피어링되면 A-C 도 된다 | 전이적 피어링은 지원되지 않습니다 |
 | VPC 피어링 MTU 는 1500 이다 | 리전 간은 8500, 리전 내는 점보 프레임 경로입니다 |
 | 게이트웨이 엔드포인트로 온프레미스에서 S3 에 갈 수 있다 | 갈 수 없습니다. 인터페이스 엔드포인트가 필요합니다 |
+| 인터페이스 엔드포인트를 만들면 온프레미스에서 바로 붙는다 | 이름 확인이 남아 있습니다. **엔드포인트별 S3 DNS 이름**을 쓰거나 **Route 53 Resolver 인바운드 엔드포인트**를 두어야 합니다 |
 | 인터페이스 엔드포인트도 라우팅 테이블을 고쳐야 한다 | 고치지 않습니다. DNS 로 동작합니다 |
 | 엔드포인트 서비스와 VPC Lattice 는 사실상 같은 것이다 | 엔드포인트 서비스는 **계층 4 · 서비스 1개 · NLB 필수**, VPC Lattice 는 **계층 7 · 서비스 네트워크 · NLB 불필요**입니다 |
 | VPC Lattice 를 쓰면 PrivateLink 는 안 쓴다 | 서비스 네트워크를 온프레미스·타 VPC 에서 쓸 때 필요한 **서비스 네트워크 유형 VPC 엔드포인트가 PrivateLink** 입니다 |
@@ -1646,6 +1722,7 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 | 항목 | 근거 |
 |---|---|
 | Transit Gateway **격리된 VPC** 구성 예시. 교재는 "프로덕션·비프로덕션을 다른 라우팅 테이블에 연관시킨다"고만 적고 연관·전파를 어떻게 걸어야 하는지는 보여 주지 않습니다. 3.4 절에 두 라우팅 테이블 구성, 블랙홀 경로, 정적 경로 우선순위, 기본 라우팅 테이블 옵션을 더했습니다 | [How AWS Transit Gateway works](https://docs.aws.amazon.com/vpc/latest/tgw/how-transit-gateways-work.html) |
+| **온프레미스에서 S3 로 가는 하이브리드 경로.** 교재는 인터페이스 엔드포인트의 차별점으로 "온프레미스 액세스 가능"만 적고, 실제 구성(엔드포인트별 DNS 이름, Route 53 Resolver 인바운드 엔드포인트, 게이트웨이·인터페이스 병행과 그 비용 최적화)은 다루지 않습니다. 4.5 절에 두 아키텍처 패턴과 DNS 해결 방법을 더했습니다 | [AWS PrivateLink for Amazon S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html) |
 | **캐시 키의 정의와 관리형 정책(프리셋).** 교재는 캐시 정책을 설명하면서 "캐시 키"를 정의하지 않고, 관리형 정책도 다루지 않습니다. 7.4 절에 기본 캐시 키 구성 요소·중복 캐시 문제를, 7.6 절에 관리형 캐시 정책 3종과 관리형 오리진 요청 정책을 더했습니다 | [Understand the cache key](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/understanding-the-cache-key.html), [Use managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) |
 | **VPC 엔드포인트 서비스와 VPC Lattice 의 비교.** 교재는 엔드포인트 서비스를 "내 서비스를 프라이빗하게 노출하는 수단"으로만 언급하고 VPC Lattice 를 다루지 않으므로, 둘이 같은 요구에 답하면서 어떻게 다른지 비교할 지점이 없습니다. 5장에 노출 단위, 프로토콜, 권한 부여, 관찰성 비교를 더했습니다 | [AWS PrivateLink concepts](https://docs.aws.amazon.com/vpc/latest/privatelink/concepts.html), [Overview of AWS networking services for SaaS offerings](https://docs.aws.amazon.com/prescriptive-guidance/latest/saas-network-access-options/services.html) |
 | Lambda@Edge 의 Node.js·Python 지원 (교재는 언어를 명시하지 않았습니다) | [Differences between CloudFront Functions and Lambda@Edge](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/edge-functions-choosing.html) |
@@ -1663,6 +1740,7 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 | Transit Gateway 쿼터 | 계정당 5개(조정 가능), TGW 당 CIDR 블록 5개, 최대 5,000개 VPC | 같은 이유로 수치를 본문에 넣지 않았습니다 |
 | CloudFront Origin Shield 상세 | 오리진 앞 추가 캐싱 계층 | Origin Shield 문서를 직접 확인하지 못했습니다. 교재 기술 범위로만 적었습니다 |
 | 인터페이스 엔드포인트 지원 서비스 수 | 교재 표에 서비스 목록이 있습니다 | 목록은 계속 늘어나므로 개수를 적지 않고 대표 예시만 넣었습니다 |
+
 
 
 
