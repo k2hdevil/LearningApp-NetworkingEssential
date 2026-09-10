@@ -22,7 +22,7 @@
 >
 > - 🆕 원본 강사용 덱에 없는 내용입니다. AWS 공식 문서로 확인한 항목만 넣었습니다.
 > - 🔄 원본 강사용 덱의 내용이 현재와 달라 교정한 항목입니다. 교재에 어떻게 적혀 있는지도 11장에 함께 적어 두었습니다.
-> - 검증일: 2026년 9월 7일. 수치와 쿼터는 바뀔 수 있으니 중요한 결정을 내릴 때는 링크된 문서를 다시 확인하세요.
+> - 검증일: 2026년 9월 7일. 6.3·6.4 절은 9월 10일에 확인했습니다. 수치와 쿼터는 바뀔 수 있으니 중요한 결정을 내릴 때는 링크된 문서를 다시 확인하세요.
 > - 교재의 `지식 확인` 문제는 옮기지 않았습니다. 실습 절차도 실습 가이드가 담당하므로 이 문서에는 실습이 무엇을 만드는지만 적었습니다.
 
 ---
@@ -258,15 +258,57 @@ IaC 의 이점은 네 가지입니다.
 
 ### 5.3 레코드 유형
 
-| 레코드 | 용도 |
+값 예시는 🆕 로, **Route 53 콘솔에 실제로 입력하는 형식**입니다.
+
+| 레코드 | 용도 | 값 예시 🆕 |
+|---|---|---|
+| **A** | 트래픽을 **IPv4** 주소로 라우팅 | `192.0.2.1` — 점으로 구분된 10진 표기 |
+| **AAAA** | 트래픽을 **IPv6** 주소로 라우팅 | `2001:0db8:85a3:0:0:8a2e:0370:7334` — 콜론으로 구분된 16진 표기 |
+| **CNAME** | 트래픽을 다른 도메인 이름으로 라우팅 | `hostname.example.com` |
+| **MX** | 메일 서버 지정 | `10 mail.example.com` — **우선순위 + 도메인 이름**. 값이 작을수록 먼저 씁니다 |
+| **TXT** | 이메일 발신자 확인, 애플리케이션별 값 | `"v=spf1 ip4:192.168.0.1/16 -all"` — 큰따옴표로 감쌉니다 |
+| **PTR** | IP 주소를 도메인 이름에 매핑 | `hostname.example.com` |
+| **SRV** | 서버를 식별하는 애플리케이션별 값 | `10 5 80 hostname.example.com` — **우선순위 · 가중치 · 포트 · 도메인 이름** |
+
+> `192.0.2.0/24` 와 `2001:db8::/32` 는 **문서 예시용으로 예약된 범위**입니다. AWS 문서가
+> 쓰는 값을 그대로 옮겼습니다. 실제 값을 넣을 때는 서버의 주소를 씁니다.
+
+#### 5.3.1 A·AAAA 와 CNAME 은 무엇이 다른가 🆕
+
+**A·AAAA 는 이름을 IP 주소에 연결하고, CNAME 은 이름을 다른 이름에 연결합니다.**
+CNAME 을 따라가면 결국 A 나 AAAA 를 만나야 답이 나옵니다.
+
+작은 호스팅 영역을 하나 보면 관계가 보입니다.
+
+```text
+이름                        유형     값
+----------------------------------------------------------------
+example.com                 A        192.0.2.1
+www.example.com             CNAME    example.com
+ipv6.example.com            AAAA     2001:0db8:85a3:0:0:8a2e:0370:7334
+mail.example.com            A        192.0.2.10
+example.com                 MX       10 mail.example.com
+```
+
+`www.example.com` 을 물어보면 확인자는 `example.com` 을 다시 물어보고, 거기서 A 레코드의
+`192.0.2.1` 을 받습니다. **한 번 더 조회가 일어납니다.**
+
+MX 레코드의 도메인 이름은 **A 또는 AAAA 레코드의 이름**을 지정합니다. 위 예에서
+`mail.example.com` 이 A 레코드인 것이 그래서입니다. RFC 2181 이 MX 값으로 CNAME 이름을
+쓰는 것을 금지합니다.
+
+**CNAME 에는 제약이 두 가지 있습니다.** 문서가 둘 다 중요 표시로 강조합니다.
+
+| 제약 | 내용 |
 |---|---|
-| **A** | 트래픽을 **IPv4** 주소로 라우팅 |
-| **AAAA** | 트래픽을 **IPv6** 주소로 라우팅 |
-| **CNAME** | 트래픽을 다른 도메인 이름으로 라우팅 |
-| **MX** | 메일 서버 지정 |
-| **TXT** | 이메일 발신자 확인, 애플리케이션별 값 |
-| **PTR** | IP 주소를 도메인 이름에 매핑 |
-| **SRV** | 서버를 식별하는 애플리케이션별 값 |
+| **Zone Apex 에 만들 수 없습니다** | `example.com` 에는 CNAME 을 만들 수 없습니다. `www.example.com`, `newproduct.example.com` 같은 하위 도메인에는 만들 수 있습니다. DNS 프로토콜의 제약입니다 |
+| **CNAME 을 만든 이름에는 다른 레코드를 만들 수 없습니다** | `www.example.com` 에 CNAME 을 만들면, **이름이 `www.example.com` 인 다른 레코드는 하나도** 만들 수 없습니다 |
+
+첫 번째 제약이 5.4 절 별칭 레코드가 존재하는 이유입니다. 두 번째는 교재에 없는데 실제로
+자주 걸립니다. `www` 에 CNAME 을 걸어 두고 나중에 그 이름으로 TXT 검증 레코드를 추가하려다
+막히는 경우입니다.
+
+> — 출처: [Supported DNS record types](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/ResourceRecordTypes.html)
 
 ### 5.4 별칭 레코드
 
@@ -313,6 +355,9 @@ DNS TTL 은 **Route 53 에 추가 쿼리 없이 레코드를 캐시할 수 있�
 | 특징 | **위임 세트**를 등록 기관·상위 도메인에 제공 | 하이브리드 네트워킹 지원, **여러 VPC 및 계정 간 연결** |
 | 필요한 것 | — | **VPC 연결**, Route 53 확인자 |
 
+프라이빗 호스팅 영역은 6.3 절에서, 표의 "하이브리드 네트워킹 지원"이 실제로 무엇인지는
+6.4 절에서 자세히 봅니다.
+
 > — 출처: [Working with hosted zones](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/hosted-zones-working-with.html)
 
 ### 6.2 위임 세트
@@ -345,7 +390,193 @@ DNS TTL 은 **Route 53 에 추가 쿼리 없이 레코드를 캐시할 수 있�
 같은 네임 서버 세트**를 쓸 수 있습니다. 여러 도메인을 운영할 때 등록 기관에 등록할
 네임 서버를 하나로 통일할 수 있어 편합니다.
 
-### 6.3 여러 VPC·계정에 DNS 설정 뿌리기: Route 53 Profiles 🆕
+### 6.3 프라이빗 호스팅 영역 🆕
+
+교재는 6.1 절 표에서 프라이빗 호스팅 영역을 한 열로만 다룹니다. 실무에서 걸리는 지점이
+여기에 몰려 있으니 좀 더 봅니다.
+
+**프라이빗 호스팅 영역은 내가 만든 하나 이상의 VPC 안에서** 도메인과 그 하위 도메인의
+DNS 쿼리에 어떻게 응답할지 담는 컨테이너입니다. 동작은 네 단계입니다.
+
+1. 프라이빗 호스팅 영역(`example.com`)을 만들고 **연결할 VPC 를 지정**합니다.
+   만든 뒤에 VPC 를 더 연결할 수 있습니다
+2. 그 안에 레코드를 만듭니다. 예를 들어 VPC 안 EC2 인스턴스에서 도는 데이터베이스 서버를
+   가리키는 A 레코드 `db.example.com` 을 만들고 서버의 IP 주소를 지정합니다
+3. 애플리케이션이 `db.example.com` 을 물어보면 Route 53 이 그 IP 주소를 돌려줍니다
+4. 애플리케이션이 그 주소로 데이터베이스에 연결합니다
+
+#### 6.3.1 답을 받을 수 있는 위치가 정해져 있습니다
+
+**이것이 가장 많이 걸리는 지점입니다.** 프라이빗 호스팅 영역에서 답을 받으려면 둘 중
+하나여야 합니다.
+
+- **연결된 VPC 중 하나에서 실행되는 EC2 인스턴스**에서 쿼리한다
+- 하이브리드 구성의 **인바운드 엔드포인트**를 거쳐 쿼리한다 (6.4 절)
+
+**VPC 밖에서, 그리고 하이브리드 구성 밖에서 쿼리하면** 그 쿼리는 **인터넷에서 재귀적으로
+확인**됩니다. 즉 오류가 나는 게 아니라 **엉뚱한 답(또는 NXDOMAIN)이 옵니다.** "레코드는
+분명히 만들었는데 안 된다"는 상황의 대부분이 이것입니다.
+
+전제 조건도 있습니다. VPC 의 다음 두 설정이 **`true`** 여야 합니다.
+
+```text
+enableDnsHostnames
+enableDnsSupport
+```
+
+#### 6.3.2 네임 서버가 붙지만 쓰이지 않습니다
+
+프라이빗 호스팅 영역을 만들면 다음 네임 서버가 붙습니다.
+
+```text
+ns-0.awsdns-00.com
+ns-512.awsdns-00.net
+ns-1024.awsdns-00.org
+ns-1536.awsdns-00.co.uk
+```
+
+6.2 절의 위임 세트와 달리 **이 네 개는 예약된 주소이고 퍼블릭 호스팅 영역에는 절대 쓰이지
+않습니다.** DNS 프로토콜이 모든 호스팅 영역에 NS 레코드를 요구하기 때문에 형식상 붙는
+것입니다.
+
+**VPC Resolver 는 이 주소로 접속하지 않습니다.** 인터넷에서 이 네임 서버를 직접 쿼리해도
+프라이빗 호스팅 영역 정보는 돌아오지 않습니다. VPC Resolver 는 **VPC 와 호스팅 영역의
+연관 관계로** 쿼리가 프라이빗 네임스페이스에 속하는지 판단하고, 프라이빗 DNS 서버에
+직접 연결합니다.
+
+#### 6.3.3 이름이 겹칠 때 무엇이 이기는가
+
+퍼블릭·프라이빗 호스팅 영역에 같은 이름을 쓰는 것이 **split-view DNS**(split-horizon DNS)
+입니다. `example.com` 을 내부용(`accounting.example.com`)과 외부용(`www.example.com`)에
+함께 쓰는 구성입니다. 같은 이름의 퍼블릭·프라이빗 호스팅 영역을 만들고, 프라이빗 쪽에
+VPC 를 연결하고, 각 영역에 레코드를 만들면 됩니다.
+
+이름이 겹치면 판단 기준은 **가장 구체적인 일치**입니다. `seattle.accounting.example.com`
+쿼리에 대해 `accounting.example.com` 과 `example.com` 둘 다 부모로서 일치하지만,
+**더 구체적인 `accounting.example.com`** 이 선택됩니다.
+
+**여기에 함정이 하나 있습니다.**
+
+| 상황 | VPC Resolver 의 동작 |
+|---|---|
+| 일치하는 프라이빗 호스팅 영역이 **없다** | 퍼블릭 DNS 확인자로 넘겨 일반 DNS 쿼리처럼 처리합니다 |
+| 일치하는 프라이빗 호스팅 영역이 **있고 레코드도 있다** | 그 레코드로 응답합니다 |
+| 일치하는 프라이빗 호스팅 영역이 **있는데 레코드가 없다** | **퍼블릭으로 넘기지 않습니다.** 클라이언트에 **NXDOMAIN** 을 돌려줍니다 |
+
+세 번째 행이 split-view 구성에서 사고를 냅니다. 프라이빗 영역 `example.com` 을 만들어 둔
+VPC 안에서는, 프라이빗 영역에 레코드가 없는 하위 도메인이 **퍼블릭 영역으로 폴백하지
+않습니다.** 내부에서도 쓰는 이름은 프라이빗 영역에 **전부 다시 만들어야** 합니다.
+
+또 하나. **같은 도메인 이름에 대해 Resolver 규칙과 프라이빗 호스팅 영역이 둘 다 있으면
+Resolver 규칙이 이깁니다.** 쿼리가 프라이빗 호스팅 영역의 레코드로 풀리지 않고
+온프레미스로 전달됩니다(6.4 절).
+
+#### 6.3.4 프라이빗 호스팅 영역의 제약
+
+| 항목 | 내용 |
+|---|---|
+| **쓸 수 있는 라우팅 정책** | 단순, 장애 조치, 다중 값 응답, 가중치 기반, 지연 시간 기반, 지리적 위치, 지리 근접. **그 밖의 정책으로는 레코드를 만들 수 없습니다** |
+| **상태 확인 연결** | 장애 조치, 다중 값 응답, 가중치 기반, 지연 시간 기반, 지리적 위치, 지리 근접 레코드에만 연결할 수 있습니다 |
+| **커스텀 DNS 서버를 쓸 때** | VPC 의 EC2 인스턴스에 커스텀 DNS 서버를 구성했다면, 프라이빗 DNS 쿼리를 **VPC 네트워크 범위의 시작 주소 + 2** 로 보내도록 구성해야 합니다. VPC CIDR 이 `10.0.0.0/16` 이면 `10.0.0.2` 입니다 |
+| **하위 도메인 위임** | 프라이빗 호스팅 영역에 **NS 레코드를 만들어** 하위 도메인 책임을 위임할 수 있습니다 |
+
+> — 출처: [Working with private hosted zones](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/hosted-zones-private.html)
+
+> — 출처: [Considerations when working with a private hosted zone](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/hosted-zone-private-considerations.html)
+
+### 6.4 하이브리드 DNS: Route 53 VPC Resolver 🆕 🔄
+
+> **이름이 바뀌었습니다.** 문서는 **Route 53 VPC Resolver** 라고 부릅니다.
+> "이전에는 Route 53 Resolver 라고 했으나 Route 53 Global Resolver 가 도입되면서
+> 이름이 바뀌었다"고 명시되어 있습니다. 교재와 이 문서의 다른 절에 나오는
+> "Route 53 확인자 / Route 53 Resolver" 는 같은 것입니다.
+
+6.1 절 표에서 프라이빗 호스팅 영역의 특징으로 "하이브리드 네트워킹 지원"을 적었습니다.
+이것을 실제로 구현하는 서비스가 **Route 53 VPC Resolver** 입니다.
+
+#### 6.4.1 기본 동작
+
+VPC Resolver 는 **모든 VPC 에 기본으로 있습니다.** VPC 는 **VPC+2 주소**로 여기에 접속하고,
+그 주소가 가용 영역 안의 VPC Resolver 로 연결됩니다.
+
+| 쿼리 대상 | VPC Resolver 의 동작 |
+|---|---|
+| 로컬 VPC 도메인 이름 (예: `ec2-192-0-2-44.compute-1.amazonaws.com`) | 자동으로 응답합니다 |
+| **프라이빗 호스팅 영역의 레코드** (예: `acme.example.com`) | 자동으로 응답합니다 |
+| 퍼블릭 도메인 이름 | 인터넷의 퍼블릭 네임 서버에 **재귀 조회**를 수행합니다 |
+
+여기까지는 VPC 안에서만 통합니다. **VPC 워크로드와 온프레미스 워크로드가 섞이면**
+온프레미스에 호스팅된 DNS 레코드도 풀어야 하고, 반대로 온프레미스 리소스가 AWS 쪽 이름을
+풀어야 합니다. 이때 쓰는 것이 **Resolver 엔드포인트와 조건부 전달 규칙**입니다.
+
+| 구성 요소 | 하는 일 |
+|---|---|
+| **인바운드 Resolver 엔드포인트** | **온프레미스 네트워크나 다른 VPC 에서 내 VPC 로** 오는 DNS 쿼리를 허용합니다 |
+| **아웃바운드 Resolver 엔드포인트** | **내 VPC 에서 온프레미스나 다른 VPC 로** 나가는 DNS 쿼리를 허용합니다 |
+| **Resolver 규칙** | **도메인 이름 하나당 전달 규칙 하나**를 만듭니다. VPC 에 직접 적용하고, **여러 계정과 공유**할 수 있습니다 |
+
+#### 6.4.2 아웃바운드: VPC 에서 온프레미스 이름 풀기
+
+```text
+  EC2 instance                                  On-prem DNS resolver
+     |                                             ^
+     | (1) internal.example.com ?                  |
+     v                                             |
+  VPC+2 (VPC Resolver)                             |
+     |                                             |
+     | (2) forwarding rule matches                 |
+     v                                             |
+  Outbound endpoint                                |
+     +--(3)(4) DX / Site-to-Site VPN --------------+
+```
+
+1. EC2 인스턴스가 `internal.example.com` 을 물어봅니다. 권한 DNS 서버는 온프레미스
+   데이터 센터에 있습니다. 쿼리는 **VPC+2** 로 갑니다
+2. `internal.example.com` 을 온프레미스로 전달하도록 **전달 규칙**이 구성되어 있습니다
+3. 쿼리가 **아웃바운드 엔드포인트**로 넘어갑니다
+4. 아웃바운드 엔드포인트가 **Direct Connect 또는 Site-to-Site VPN** 을 통해 온프레미스
+   DNS 확인자로 쿼리를 전달합니다
+5. 온프레미스 확인자가 풀어서 **같은 경로를 거꾸로** 답을 돌려줍니다
+
+#### 6.4.3 인바운드: 온프레미스에서 AWS 이름 풀기
+
+```text
+  On-prem client                                VPC Resolver
+     |                                             ^
+     | (a) dev.example.com ?                       | (d)
+     v                                             |
+  On-prem DNS resolver                          Inbound endpoint
+     |                                             ^
+     | (b) forwarding rule matches                 |
+     +--(c) DX / Site-to-Site VPN -----------------+
+```
+
+온프레미스 클라이언트가 `dev.example.com` 을 온프레미스 확인자에 물어보고, 그 확인자에
+있는 전달 규칙이 쿼리를 **인바운드 엔드포인트**로 보냅니다. 인바운드 엔드포인트가
+VPC Resolver 로 넘기고, VPC Resolver 가 **프라이빗 호스팅 영역**을 보고 답합니다.
+
+**모듈 3 §4.5 와 이어집니다.** 온프레미스에서 S3 인터페이스 엔드포인트를 기본 DNS 이름
+(`s3.us-east-1.amazonaws.com`)으로 쓰려면 인바운드 엔드포인트가 필요하다고 했던 것이
+바로 이 구조입니다.
+
+#### 6.4.4 구성할 때 알아야 할 것
+
+| 항목 | 내용 |
+|---|---|
+| **엔드포인트 IP** | **VPC 에서 쓸 수 있는 범위에서** 고릅니다. **퍼블릭 IP 가 아닙니다.** 그래서 엔드포인트마다 VPC 와 온프레미스를 **Direct Connect 또는 VPN** 으로 연결해 두어야 합니다 (아웃바운드는 **NAT 게이트웨이**도 가능합니다) |
+| **엔드포인트 재사용** | 아웃바운드 엔드포인트는 **같은 리전의 여러 VPC 가 함께** 쓸 수 있습니다. 여러 개를 만들어도 됩니다 |
+| **대상 IP 선택** | VPC Resolver 가 규칙의 대상 IP 를 **무작위로** 고릅니다. 선호도가 없습니다. 응답이 없으면 남은 대상 IP 중에서 다시 무작위로 재시도합니다 |
+| **도달성** | **모든 대상 IP 가 Resolver 엔드포인트에서 도달 가능해야 합니다.** 하나라도 막혀 있으면 DNS 확인 시간이 길어집니다 |
+| **인바운드 위임** | 온프레미스 네임 서버에 인바운드 엔드포인트의 IP 를 **글루(NS) 레코드**로 등록합니다. 예를 들어 `aws.example.com` 을 위임하려면 그 이름의 NS 레코드가 엔드포인트 IP 를 가리키게 합니다 |
+| **우선순위** | 같은 도메인 이름에 **Resolver 규칙과 프라이빗 호스팅 영역**이 함께 있으면 **Resolver 규칙이 이깁니다** |
+
+> — 출처: [What is Route 53 VPC Resolver?](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver.html)
+
+> — 출처: [Forwarding outbound DNS queries to your network](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-forwarding-outbound-queries.html)
+
+> — 출처: [Forwarding inbound DNS queries to your VPCs](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-forwarding-inbound-queries.html)
+
+### 6.5 여러 VPC·계정에 DNS 설정 뿌리기: Route 53 Profiles 🆕
 
 > 출시: **2024년 4월 22일** (문서 이력 기준). 교재 콘텐츠 시점보다 뒤입니다.
 
@@ -363,7 +594,7 @@ VPC 로 설정이 전파됩니다.**
 
 | 리소스 | 비고 |
 |---|---|
-| 프라이빗 호스팅 영역과 그 안의 설정 | 6.1 절의 프라이빗 호스팅 영역 |
+| 프라이빗 호스팅 영역과 그 안의 설정 | 6.3 절의 프라이빗 호스팅 영역 |
 | Resolver 규칙 (전달 규칙과 시스템 규칙) | 하이브리드 DNS 의 핵심 |
 | DNS Firewall 규칙 그룹 | 도메인 기반 필터링 |
 | **인터페이스 VPC 엔드포인트** | 모듈 3 §4.2 의 그 엔드포인트입니다 |
@@ -616,6 +847,9 @@ example.com 의 DNS 쿼리 → Amazon Route 53
 | TTL 은 짧을수록 좋다 | 쿼리 양과 비용이 늘어납니다. 용도별로 정합니다 |
 | 지연 시간 기반 라우팅은 내 측정값을 쓴다 | AWS 가 측정한 사용자↔AWS 데이터 센터 지연 시간을 씁니다 |
 | 프라이빗 호스팅 영역은 단순 라우팅만 된다 | 대부분의 정책을 쓸 수 있습니다 |
+| 프라이빗 영역에 레코드가 없으면 퍼블릭 영역으로 넘어간다 | 넘어가지 않습니다. **NXDOMAIN** 이 돌아옵니다. 일치하는 프라이빗 영역이 **아예 없을 때만** 퍼블릭으로 갑니다 |
+| 프라이빗 호스팅 영역을 만들면 온프레미스에서도 풀린다 | 안 풀립니다. **인바운드 Resolver 엔드포인트**가 있어야 합니다 |
+| 프라이빗 호스팅 영역과 Resolver 규칙이 겹치면 영역이 이긴다 | **Resolver 규칙이 이깁니다.** 쿼리가 온프레미스로 전달됩니다 |
 | 위임 세트는 나중에 바꿀 수 있다 | 생성 후 수정할 수 없습니다 |
 | Profile 과 VPC 설정이 겹치면 항상 VPC 가 이긴다 | 같은 도메인이면 VPC 가 이기지만, **더 구체적인 쪽이 우선**입니다 |
 | VPC 에 Profile 을 여러 개 붙일 수 있다 | VPC 하나에 Profile 하나입니다 |
@@ -650,6 +884,7 @@ example.com 의 DNS 쿼리 → Amazon Route 53
 | 항목 | 교재 | 현재 | 근거 |
 |---|---|---|---|
 | 서비스 이름 | Amazon Route 53 Application Recovery Controller | **Amazon Application Recovery Controller (ARC)** | [How Elastic Load Balancing works](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html) |
+| 서비스 이름 | Route 53 Resolver (교재는 "Route 53 확인자") | **Route 53 VPC Resolver**. 문서가 "이전에는 Route 53 Resolver 라고 했으나 **Route 53 Global Resolver** 가 도입되면서 이름이 바뀌었다"고 명시합니다. 같은 것입니다 (6.4 절) | [What is Route 53 VPC Resolver?](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver.html) |
 | 가용성 티어별 애플리케이션 유형 | 99.99% 는 "브로드캐스트 워크로드", 99.999% 는 "ATM 트랜잭션" | 문서는 99.99% 에 **동영상 전송**, 99.999% 에 **통신 워크로드**를 함께 넣고, 99.9% 는 "**내부 도구**"라는 맥락을 붙입니다 | [Availability (Reliability Pillar)](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/availability.html) |
 
 **가용성 수치 표(99% = 3일 15시간 … 99.999% = 5분)는 현행 문서와 정확히 일치합니다.**
@@ -668,7 +903,7 @@ example.com 의 DNS 쿼리 → Amazon Route 53
 
 | 항목 | 출시 | 무엇인가 | 근거 |
 |---|---|---|---|
-| **Amazon Route 53 Profiles** | 2024-04-22 | 프라이빗 호스팅 영역, Resolver 규칙, DNS Firewall 규칙 그룹, 인터페이스 VPC 엔드포인트, 쿼리 로깅 구성을 묶어 여러 VPC·계정에 적용합니다. AWS RAM 으로 공유하고, VPC 하나에 Profile 하나를 연결합니다. 충돌 시 로컬 VPC 가 우선하되 더 구체적인 쪽이 이깁니다 (6.3 절) | [Route 53 문서 이력](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/History.html) |
+| **Amazon Route 53 Profiles** | 2024-04-22 | 프라이빗 호스팅 영역, Resolver 규칙, DNS Firewall 규칙 그룹, 인터페이스 VPC 엔드포인트, 쿼리 로깅 구성을 묶어 여러 VPC·계정에 적용합니다. AWS RAM 으로 공유하고, VPC 하나에 Profile 하나를 연결합니다. 충돌 시 로컬 VPC 가 우선하되 더 구체적인 쪽이 이깁니다 (6.5 절) | [Route 53 문서 이력](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/History.html) |
 
 **출시 시점을 확인하지 않은 항목**
 
@@ -679,6 +914,8 @@ example.com 의 DNS 쿼리 → Amazon Route 53
 | **계획된 유지 관리 제외에 대한 AWS 입장** | 전체 시간에서 빼는 고객도 있으나 AWS 는 권장하지 않습니다 | [Availability (Reliability Pillar)](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/availability.html) |
 | **IP 기반 라우팅의 CIDR 범위** | IPv4 는 `/0`\~`/24`, IPv6 는 `/0`\~`/48`. CIDR 로케이션과 재사용 가능한 CIDR 컬렉션으로 묶습니다 | [Amazon Route 53 concepts](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/route-53-concepts.html) |
 | **프라이빗 호스팅 영역의 정책 지원** | 대부분의 라우팅 정책을 프라이빗 호스팅 영역에서 쓸 수 있습니다 | [Choosing a routing policy](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-policy.html) |
+| **프라이빗 호스팅 영역의 동작과 제약** | 답을 받을 수 있는 위치(연결된 VPC 의 EC2 또는 인바운드 엔드포인트), `enableDnsHostnames`·`enableDnsSupport` 전제, 예약 네임 서버 4개가 쓰이지 않는 이유, split-view DNS, 겹칠 때 가장 구체적인 일치, **레코드가 없으면 퍼블릭으로 폴백하지 않고 NXDOMAIN**, 커스텀 DNS 서버의 VPC+2, 하위 도메인 NS 위임 (6.3 절) | [Considerations when working with a private hosted zone](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/hosted-zone-private-considerations.html) |
+| **하이브리드 DNS 구현 방법** | 교재는 프라이빗 호스팅 영역이 "하이브리드 네트워킹을 지원한다"고만 적습니다. 이를 구현하는 것이 **Route 53 VPC Resolver** 이고, 인바운드·아웃바운드 Resolver 엔드포인트와 조건부 전달 규칙으로 구성합니다. 엔드포인트 IP 는 퍼블릭이 아니므로 Direct Connect·VPN 이 필요하고(아웃바운드는 NAT 게이트웨이 가능), 같은 도메인이면 **Resolver 규칙이 프라이빗 호스팅 영역보다 우선**합니다 (6.4 절) | [What is Route 53 VPC Resolver?](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver.html) |
 | **등록 대행자·레지스트리·리셀러 구분** | Route 53 은 Amazon Registrar 와 Gandi 의 **리셀러**입니다 | [Amazon Route 53 concepts](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/route-53-concepts.html) |
 | **권한 네임 서버 / 재귀 네임 서버 용어** | DNS 확인자는 재귀 네임 서버라고도 하고, Route 53 네임 서버는 권한 네임 서버입니다 | [Amazon Route 53 concepts](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/route-53-concepts.html) |
 | **영역 이동 (zonal shift)** | 교재 슬라이드 22 퀴즈 보기에만 등장하고 본문에는 설명이 없습니다. ARC 의 기능으로, 손상된 AZ 에서 로드 밸런서 리소스를 빼냅니다 (모듈 2 참조) | [How Elastic Load Balancing works](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html) |
