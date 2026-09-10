@@ -169,12 +169,12 @@ Terry 는 ExampleCorp 의 웹 애플리케이션 배포를 **확장 가능하고
 |---|---|---|
 | **Amazon VPC Route Server** | EC2 로 운영하는 네트워크 어플라이언스에 BGP 동적 라우팅과 라우팅 내결함성이 필요할 때 | 모듈 1 §7.4 |
 | **AWS Network Firewall** | 보안 그룹·네트워크 ACL 로 표현할 수 없는 도메인 필터링이나 심층 패킷 검사가 필요할 때 | 모듈 1 §9.5 |
-| **Amazon VPC Lattice** | CIDR 이 겹치거나, VPC 연결이 아니라 서비스 대 서비스 연결과 인증이 필요할 때 | 모듈 3 §3.6 |
+| **Amazon VPC Lattice** | CIDR 이 겹치거나, VPC 연결이 아니라 서비스 대 서비스 연결과 인증이 필요할 때 | 모듈 3 §5 |
 | **리전 간 인터페이스 엔드포인트** | 다른 리전의 AWS 서비스에 프라이빗하게 접근해야 할 때 | 모듈 3 §4.6 |
-| **CloudFront VPC 오리진** | 오리진을 인터넷에서 완전히 닫아야 할 때 | 모듈 3 §6.10 |
-| **CloudFront 애니캐스트 고정 IP** | HTTP 워크로드에 허용 목록용 고정 IP 나 정점 도메인 A 레코드가 필요할 때 | 모듈 3 §6.11 |
-| **CloudFront 멀티테넌트 배포** | SaaS 처럼 도메인이 많아 배포 설정을 재사용해야 할 때 | 모듈 3 §6.12 |
-| **Amazon Route 53 Profiles** | VPC 가 많아져 프라이빗 호스팅 영역·Resolver 규칙 연결을 손으로 못 할 때 | 모듈 4 §6.3 |
+| **CloudFront VPC 오리진** | 오리진을 인터넷에서 완전히 닫아야 할 때 | 모듈 3 §7.12 |
+| **CloudFront 애니캐스트 고정 IP** | HTTP 워크로드에 허용 목록용 고정 IP 나 정점 도메인 A 레코드가 필요할 때 | 모듈 3 §7.13 |
+| **CloudFront 멀티테넌트 배포** | SaaS 처럼 도메인이 많아 배포 설정을 재사용해야 할 때 | 모듈 3 §7.14 |
+| **Amazon Route 53 Profiles** | VPC 가 많아져 프라이빗 호스팅 영역·Resolver 규칙 연결을 손으로 못 할 때 | 모듈 4 §6.5 |
 
 ---
 
@@ -225,24 +225,24 @@ Terry 는 ExampleCorp 의 웹 애플리케이션 배포를 **확장 가능하고
 | 출시 | 항목 | 모듈 |
 |---|---|---|
 | 2025-11-19 | 리전 NAT 게이트웨이 | 1 §8.3 |
-| 2025-04-28 | CloudFront 멀티테넌트 배포 | 3 §6.12 |
+| 2025-04-28 | CloudFront 멀티테넌트 배포 | 3 §7.14 |
 | 2025-03-31 | Amazon VPC Route Server | 1 §7.4 |
 | 2024-11-26 | PrivateLink 리전 간 액세스 | 3 §4.6 |
-| 2024-11-20 | CloudFront VPC 오리진 | 3 §6.10 |
-| 2024-11-20 | CloudFront 애니캐스트 고정 IP 목록 | 3 §6.11 |
+| 2024-11-20 | CloudFront VPC 오리진 | 3 §7.12 |
+| 2024-11-20 | CloudFront 애니캐스트 고정 IP 목록 | 3 §7.13 |
 | 2024-11-19 | VPC Block Public Access | 1 §9.4 |
 | 2024-09-10 | NAT 게이트웨이 MTU 8500 | 1 §8.2 |
-| 2024-04-22 | Amazon Route 53 Profiles | 4 §6.3 |
+| 2024-04-22 | Amazon Route 53 Profiles | 4 §6.5 |
 
 **교재보다 먼저 나왔는데 교재가 다루지 않은 것** — "교재가 범위를 좁게 잡았다"에
 해당합니다. 시험이나 실무에서 만나면 "새 기능"이 아니라는 점을 알아 두세요.
 
 | 출시 | 항목 | 왜 없나 | 모듈 |
 |---|---|---|---|
-| 2023-11-21 | CloudFront KeyValueStore | 교재가 Lambda@Edge 만 다룸 | 3 §7.2 |
-| 2023-03-31 | Amazon VPC Lattice (GA) | 교재가 계층 3 연결만 다룸. 덱 작성 시기와 겹칩니다 | 3 §3.6 |
-| 2022-07-27 | Global Accelerator 듀얼 스택 액셀러레이터 | 교재가 IPv4 구성만 소개 | 3 §8.3 |
-| 2021-05-03 | CloudFront Functions | 교재가 Lambda@Edge 만 다룸 | 3 §7.2 |
+| 2023-11-21 | CloudFront KeyValueStore | 교재가 Lambda@Edge 만 다룸 | 3 §8.2 |
+| 2023-03-31 | Amazon VPC Lattice (GA) | 교재가 계층 3 연결만 다룸. 덱 작성 시기와 겹칩니다 | 3 §5 |
+| 2022-07-27 | Global Accelerator 듀얼 스택 액셀러레이터 | 교재가 IPv4 구성만 소개 | 3 §9.3 |
+| 2021-05-03 | CloudFront Functions | 교재가 Lambda@Edge 만 다룸 | 3 §8.2 |
 | 2020-11-16 | AWS Network Firewall | **과정이 네트워크 보안을 범위 밖으로 둠** | 1 §9.5 |
 
 두 표를 나눈 이유가 있습니다. 아래 표의 다섯 항목은 **교재를 갱신해도 들어오지 않습니다.**
