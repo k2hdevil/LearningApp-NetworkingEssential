@@ -10,19 +10,20 @@
 2. [VPC 피어링](#2-vpc-피어링)
 3. [AWS Transit Gateway](#3-aws-transit-gateway)
 4. [VPC 엔드포인트](#4-vpc-엔드포인트)
-5. [엣지 로케이션과 AWS 글로벌 네트워크](#5-엣지-로케이션과-aws-글로벌-네트워크)
-6. [Amazon CloudFront](#6-amazon-cloudfront)
-7. [엣지에서 코드 실행하기](#7-엣지에서-코드-실행하기)
-8. [AWS Global Accelerator](#8-aws-global-accelerator)
-9. [실습 2: CloudFront로 성능 가속화](#9-실습-2-cloudfront로-성능-가속화)
-10. [한눈에 정리](#10-한눈에-정리)
-11. [교재 대비 변경 사항](#11-교재-대비-변경-사항)
+5. [서비스 간 통신](#5-서비스-간-통신)
+6. [엣지 로케이션과 AWS 글로벌 네트워크](#6-엣지-로케이션과-aws-글로벌-네트워크)
+7. [Amazon CloudFront](#7-amazon-cloudfront)
+8. [엣지에서 코드 실행하기](#8-엣지에서-코드-실행하기)
+9. [AWS Global Accelerator](#9-aws-global-accelerator)
+10. [실습 2: CloudFront로 성능 가속화](#10-실습-2-cloudfront로-성능-가속화)
+11. [한눈에 정리](#11-한눈에-정리)
+12. [교재 대비 변경 사항](#12-교재-대비-변경-사항)
 
 > **표기 설명**
 >
 > - 🆕 원본 강사용 덱에 없는 내용입니다. AWS 공식 문서로 확인한 항목만 넣었습니다.
-> - 🔄 원본 강사용 덱의 내용이 현재와 달라 교정한 항목입니다. 교재에 어떻게 적혀 있는지도 11장에 함께 적어 두었습니다.
-> - 검증일: 2026년 9월 7일. 수치와 쿼터는 바뀔 수 있으니 중요한 결정을 내릴 때는 링크된 문서를 다시 확인하세요.
+> - 🔄 원본 강사용 덱의 내용이 현재와 달라 교정한 항목입니다. 교재에 어떻게 적혀 있는지도 12장에 함께 적어 두었습니다.
+> - 검증일: 2026년 9월 7일. 3.4 절, 5장, 7.4·7.6 절은 9월 10일에 확인했습니다. 수치와 쿼터는 바뀔 수 있으니 중요한 결정을 내릴 때는 링크된 문서를 다시 확인하세요.
 > - 교재의 `지식 확인` 문제는 옮기지 않았습니다. 실습 절차도 실습 가이드가 담당하므로 이 문서에는 실습이 무엇을 만드는지만 적었습니다.
 
 ---
@@ -34,7 +35,7 @@
 | 문제 | 도구 |
 |---|---|
 | **VPC 를 서로 연결**하고 싶다 | VPC 피어링, AWS Transit Gateway |
-| **서비스 대 서비스**로 연결하고 싶다 | Amazon VPC Lattice (교재에 없음, 3.6 절) |
+| **서비스 대 서비스**로 연결하고 싶다 | VPC 엔드포인트 서비스, Amazon VPC Lattice (교재가 다루지 않음, 5장) |
 | **AWS 서비스에 프라이빗하게** 접근하고 싶다 | VPC 엔드포인트 (AWS PrivateLink) |
 | **사용자에게 콘텐츠를 빨리** 보내고 싶다 | Amazon CloudFront (캐싱) |
 | **TCP·UDP 트래픽 경로 자체를 빠르게** 하고 싶다 | AWS Global Accelerator (가속) |
@@ -103,12 +104,14 @@ VPC A(`10.1.0.0/16`)와 VPC B(`10.2.0.0/16`)를 `pcx-1` 로 피어링한 경우:
 | **DNS 서버** 🆕 | 피어 VPC 의 Amazon DNS 서버에 연결하거나 쿼리할 수 없습니다 |
 
 ```text
-VPC A          VPC B          VPC C
-10.1.0.0/16    10.2.0.0/16    10.3.0.0/16
-    └──피어링───┘   └──피어링───┘
-    A ↔ B  ✓
-    B ↔ C  ✓
-    A ↔ C  ✗   ← 전이적 피어링은 지원되지 않습니다
+      VPC A             VPC B             VPC C
+   10.1.0.0/16       10.2.0.0/16       10.3.0.0/16
+        |                 |                 |
+        +---- peering ----+---- peering ----+
+
+  A <-> B    OK
+  B <-> C    OK
+  A <-> C    BLOCKED    <- 전이적 피어링은 지원되지 않습니다
 ```
 
 **"중복 CIDR 불가"가 왜 중요한가.** 모듈 1에서 "겹치지 않게 CIDR 을 계획하라"고 한 이유가
@@ -128,11 +131,19 @@ VPC A          VPC B          VPC C
 | AWS 리전 간 트래픽 (Transit Gateway 를 쓰지 않는 경우) | 1500 바이트 |
 | **리전 간 VPC 피어링 연결** | **8500 바이트** |
 
-리전 내 VPC 트래픽은 **점보 프레임(9001 MTU)** 경로에 해당하며, 모든 현재 세대 인스턴스
-유형이 점보 프레임을 지원합니다.
+세 번째 행과 네 번째 행이 부딪히는 것처럼 보이지만, 문서가 그렇게 나눠 놓았습니다.
+리전 간 트래픽 일반은 1500 바이트이고, **리전 간 VPC 피어링 연결은 따로 8500 바이트**로
+명시되어 있습니다.
 
-정리하면 이렇습니다. **리전 간 피어링은 8500 바이트까지, 리전 내는 점보 프레임까지**
-쓸 수 있습니다. 1500 바이트는 인터넷 게이트웨이·VPN 경로의 한도입니다.
+**리전 내 트래픽은 위 한도 목록에 없습니다.** 그래서 리전 내에서는 점보 프레임(9001 MTU)을
+쓸 수 있고, 모든 현재 세대 인스턴스 유형이 점보 프레임을 지원합니다.
+
+정리하면 **리전 간 피어링은 8500 바이트까지, 리전 내는 점보 프레임까지**입니다.
+1500 바이트는 인터넷 게이트웨이·VPN 경로의 한도입니다.
+
+다만 문서는 **VPC 를 벗어나는 트래픽에 점보 프레임을 쓸 때는 주의**하라고 덧붙입니다.
+중간 시스템이 패킷을 조각화해 오히려 느려지고, 인터넷 게이트웨이는 어차피 1500 바이트까지만
+전달합니다. **인터넷 향 트래픽에는 1500 MTU 가 권장됩니다.**
 
 > — 출처: [Network maximum transmission unit (MTU) for your EC2 instance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/network_mtu.html)
 
@@ -168,9 +179,12 @@ VPC A          VPC B          VPC C
 모니터링·로깅 도구를 한 곳에서 제공할 수 있습니다.
 
 ```text
-            [공유 서비스 VPC]
-           ╱       │        ╲
-  [부서 A VPC] [부서 B VPC] [다른 리전 VPC]
+                 [ Shared services VPC ]
+                            |
+        +--------------+--------------+
+        |              |              |
+     Dept A         Dept B     VPC in another
+       VPC            VPC          Region
 ```
 
 ---
@@ -189,24 +203,42 @@ VPC 와 온프레미스 네트워크를 상호 연결하는 **네트워크 전�
 | 프로토콜 | IPv4 와 IPv6 모두 |
 
 핵심 개념 네 개를 알아 두세요. **연결(attachment)**, **Transit Gateway 라우팅 테이블**,
-**연관(association)**, **경로 전파(route propagation)** 입니다.
+**연관(association)**, **경로 전파(route propagation)** 입니다. 이 네 개가 실제로 어떻게
+맞물리는지는 3.4 절에서 구성 예시로 따라갑니다.
 
-### 3.2 왜 피어링이 아니라 Transit Gateway 인가
+### 3.2 사용 사례
+
+| 사용 사례 | 내용 |
+|---|---|
+| VPC 상호 연결 | 허브(Transit Gateway) - 스포크(VPC) 토폴로지 |
+| 온프레미스 연결 | AWS Direct Connect 또는 VPN. **하이브리드 네트워킹은 이 과정의 범위 밖**이지만 Transit Gateway 의 이점을 이해하는 데 필요합니다 |
+| 수요 급증 대응 | VPC, 계정, VPN 용량, Direct Connect 게이트웨이를 빠르게 추가 |
+| 글로벌 전환 | 리전 간 피어링으로 VPC·DNS·Microsoft Active Directory·IP·ID 공유 |
+| **멀티캐스트** | 사용자 지정 하드웨어 없이 멀티캐스트 애플리케이션을 호스팅 |
+| 공유 서비스 중앙화 | 트래픽 검사, 인터페이스 VPC 엔드포인트 액세스, NAT 게이트웨이를 통한 송신을 한 곳에 모음 |
+
+### 3.3 왜 피어링이 아니라 Transit Gateway 인가
 
 VPC 가 늘어날 때의 라우팅 부담을 비교해 보면 답이 나옵니다.
 
 ```text
-[VPC 피어링 — 풀 메시]        [Transit Gateway — 허브 앤 스포크]
+  [ VPC peering: full mesh ]     [ Transit Gateway: hub & spoke ]
 
-  A ─── B                          A     B
-  │ ╲ ╱ │                           ╲   ╱
-  │  ╳  │                            ╲ ╱
-  │ ╱ ╲ │                          [ TGW ]
-  C ─── D                            ╱ ╲
-                                    ╱   ╲
-  VPC 4개 → 연결 6개                C     D
-  VPC n개 → 연결 n(n-1)/2개        VPC n개 → 연결 n개
+        A ------- B                     A           B
+        | \     / |                      \         /
+        |   \ /   |                       \       /
+        |    X    |                     +-----------+
+        |   / \   |                     |    TGW    |
+        | /     \ |                     +-----------+
+        C ------- D                       /       \
+                                         /         \
+                                        C           D
 ```
+
+| | 필요한 연결 수 |
+|---|---|
+| VPC 피어링 | VPC 4개 → **6개**, VPC n개 → **n(n-1)/2개** |
+| Transit Gateway | VPC n개 → **n개** |
 
 | | VPC 피어링 | AWS Transit Gateway |
 |---|---|---|
@@ -220,7 +252,7 @@ Transit Gateway 는 **같은 리전 안에서도, 서로 다른 리전 간에도
 트래픽은 항상 글로벌 AWS 백본에 유지되며 퍼블릭 인터넷을 통과하지 않습니다.
 AWS 데이터 센터 간 모든 네트워크 트래픽은 **물리적 계층에서 자동 암호화**됩니다.
 
-### 3.3 라우팅 도메인 분리
+### 3.4 라우팅 도메인 분리
 
 Transit Gateway 안에서 **라우팅 테이블을 여러 개** 두고 연관과 전파를 조정하면
 트래픽을 나눌 수 있습니다.
@@ -229,16 +261,227 @@ Transit Gateway 안에서 **라우팅 테이블을 여러 개** 두고 연관과
 테이블에 연관시키면, **단일 관리 지점에서 두 도메인을 관리하면서 서로 통신하지 못하게**
 만들 수 있습니다.
 
-### 3.4 사용 사례
+말로만 들으면 감이 잡히지 않습니다. 구체적인 요구 사항 하나를 잡고, 3.1 절의 핵심 개념
+네 개가 각각 어디에서 쓰이는지 따라가 봅시다.
 
-| 사용 사례 | 내용 |
+#### 3.4.1 요구 사항 🆕
+
+| 통신 | 허용 여부 |
 |---|---|
-| VPC 상호 연결 | 허브(Transit Gateway) - 스포크(VPC) 토폴로지 |
-| 온프레미스 연결 | AWS Direct Connect 또는 VPN. **하이브리드 네트워킹은 이 과정의 범위 밖**이지만 Transit Gateway 의 이점을 이해하는 데 필요합니다 |
-| 수요 급증 대응 | VPC, 계정, VPN 용량, Direct Connect 게이트웨이를 빠르게 추가 |
-| 글로벌 전환 | 리전 간 피어링으로 VPC·DNS·Microsoft Active Directory·IP·ID 공유 |
-| **멀티캐스트** | 사용자 지정 하드웨어 없이 멀티캐스트 애플리케이션을 호스팅 |
-| 공유 서비스 중앙화 | 트래픽 검사, 인터페이스 VPC 엔드포인트 액세스, NAT 게이트웨이를 통한 송신을 한 곳에 모음 |
+| VPC A ↔ 온프레미스 | **양방향 허용** |
+| VPC B ↔ 온프레미스 | **양방향 허용** |
+| VPC A ↔ VPC B | **차단** |
+
+주소는 이렇게 두겠습니다. 모두 사설 주소 공간입니다.
+
+| 네트워크 | CIDR |
+|---|---|
+| VPC A | `10.1.0.0/16` |
+| VPC B | `10.2.0.0/16` |
+| 온프레미스 (Site-to-Site VPN 너머) | `10.99.99.0/24` |
+
+```text
+     VPC A                        VPC B
+  10.1.0.0/16                  10.2.0.0/16
+       |                             |
+       +----------+       +----------+
+                  |       |
+             +----+-------+----+
+             | Transit Gateway |
+             +--------+--------+
+                      |
+             +--------+--------+
+             | Site-to-Site VPN|
+             +--------+--------+
+                      |
+                 On-premises
+                10.99.99.0/24
+
+  VPC A <-> On-premises  : 허용 (양방향)
+  VPC B <-> On-premises  : 허용 (양방향)
+  VPC A <-> VPC B        : 차단
+```
+
+이 요구 사항은 **VPC 피어링으로는 만들 수 없습니다.** 피어링은 전이적 라우팅을 지원하지
+않으므로 각 VPC 가 온프레미스에 닿으려면 연결을 따로따로 만들어야 하고, "무엇이 무엇과
+통신하는가"를 한 곳에서 볼 수 없습니다. Transit Gateway 는 이 판단을 **라우팅 테이블 하나
+보는 일**로 바꿉니다.
+
+#### 3.4.2 1단계 — 연결(attachment) 만들기 🆕
+
+**연결**은 Transit Gateway 에 리소스를 붙이는 단위입니다. 연결은 패킷의 **출발지이면서
+동시에 목적지**입니다. 이 예시에서는 세 개를 만듭니다.
+
+| 연결 | 유형 | 붙는 대상 |
+|---|---|---|
+| `tgw-attach-a` | VPC 연결 | VPC A |
+| `tgw-attach-b` | VPC 연결 | VPC B |
+| `tgw-attach-vpn` | VPN 연결 | Site-to-Site VPN |
+
+VPC 연결을 만들 때는 **가용 영역마다 서브넷 하나**를 지정합니다. Transit Gateway 가 그
+서브넷에 탄력적 네트워크 인터페이스를 하나 놓고, 그 인터페이스로 해당 영역의 트래픽을
+주고받습니다. **연결이 없는 가용 영역의 리소스는 Transit Gateway 에 닿지 못하므로**
+가용성을 위해 여러 영역을 켜는 것이 권장됩니다.
+
+여기까지는 아직 **선만 그은 상태**입니다. 세 연결이 모두 붙어 있어도 트래픽이 어디로 갈지는
+아직 정해지지 않았습니다.
+
+#### 3.4.3 2단계 — Transit Gateway 라우팅 테이블 두 개 만들기 🆕
+
+Transit Gateway 라우팅 테이블은 **"이 연결로 들어온 패킷을 어느 연결로 보낼지"** 를 담은
+표입니다. 목적지 IP 주소를 보고 다음 홉 연결을 고릅니다.
+
+요구 사항이 두 가지 관점을 요구합니다. **VPC 쪽에서 본 세상**과 **VPN 쪽에서 본 세상**이
+달라야 하므로, 테이블도 두 개입니다.
+
+| 라우팅 테이블 | 이 테이블을 보는 쪽 | 이 테이블에 있어야 하는 경로 |
+|---|---|---|
+| `rtb-spoke` | VPC A, VPC B | 온프레미스 경로만 |
+| `rtb-vpn` | Site-to-Site VPN | VPC A, VPC B 경로 |
+
+`rtb-spoke` 에 **VPC 경로를 넣지 않는 것**이 격리의 전부입니다. VPC A 와 VPC B 가 같은
+테이블을 보는데 그 테이블에 상대 VPC 로 가는 경로가 없으면, 패킷은 Transit Gateway 까지
+올라와서 **일치하는 경로가 없어 폐기**됩니다.
+
+#### 3.4.4 3단계 — 연관(association): 어느 테이블을 볼지 정하기 🆕
+
+**연관**은 연결과 라우팅 테이블을 묶는 작업입니다. 방향이 있습니다.
+
+> **연관 = "이 연결로 패킷이 들어왔을 때 조회할 테이블"**
+
+연결 하나는 **라우팅 테이블 하나에만** 연관됩니다. 반대로 라우팅 테이블 하나에는 연결이
+0개부터 여러 개까지 연관될 수 있습니다.
+
+| 연결 | 연관되는 라우팅 테이블 |
+|---|---|
+| `tgw-attach-a` (VPC A) | `rtb-spoke` |
+| `tgw-attach-b` (VPC B) | `rtb-spoke` |
+| `tgw-attach-vpn` (VPN) | `rtb-vpn` |
+
+VPC A 와 VPC B 를 **같은 테이블에 연관**시킨 것이 핵심입니다. 둘은 똑같은 경로 목록을 보게
+되고, 그 목록에는 상대 VPC 로 가는 경로가 없습니다.
+
+#### 3.4.5 4단계 — 경로 전파(route propagation): 어느 테이블에 실릴지 정하기 🆕
+
+**경로 전파**는 연관과 방향이 반대입니다.
+
+> **전파 = "이 연결이 가진 경로를 어느 테이블에 심을지"**
+
+연관은 하나뿐이지만 **전파는 여러 테이블로 할 수 있습니다.** 이 비대칭이 도메인 분리를
+가능하게 하는 장치입니다.
+
+- **VPC 연결**은 그 VPC 의 CIDR 블록을 전파합니다
+- **동적 라우팅을 쓰는 VPN 연결**은 온프레미스 라우터가 BGP 로 알려 준 경로를 전파합니다
+
+| 연결 | 전파 대상 테이블 | 심기는 경로 |
+|---|---|---|
+| `tgw-attach-a` (VPC A) | `rtb-vpn` **만** | `10.1.0.0/16` |
+| `tgw-attach-b` (VPC B) | `rtb-vpn` **만** | `10.2.0.0/16` |
+| `tgw-attach-vpn` (VPN) | `rtb-spoke` **만** | `10.99.99.0/24` |
+
+**VPC 연결을 `rtb-spoke` 에 전파하지 않는 것**이 차단의 실제 메커니즘입니다. 여기서
+`tgw-attach-a` 를 `rtb-spoke` 에도 전파해 버리면, `rtb-spoke` 에 `10.1.0.0/16` 경로가
+생기고 그 테이블을 보는 VPC B 가 즉시 VPC A 에 닿게 됩니다. **한 줄 차이로 격리가 깨집니다.**
+
+#### 3.4.6 결과 — 완성된 라우팅 테이블 🆕
+
+**`rtb-spoke`** (VPC A, VPC B 가 연관)
+
+| 대상 | 타깃 | 경로 유형 |
+|---|---|---|
+| `10.99.99.0/24` | `tgw-attach-vpn` | 전파됨(propagated) |
+
+**`rtb-vpn`** (VPN 연결이 연관)
+
+| 대상 | 타깃 | 경로 유형 |
+|---|---|---|
+| `10.1.0.0/16` | `tgw-attach-a` | 전파됨(propagated) |
+| `10.2.0.0/16` | `tgw-attach-b` | 전파됨(propagated) |
+
+**잊으면 안 되는 것: VPC 서브넷 라우팅 테이블입니다.** Transit Gateway 를 아무리 잘 구성해도
+VPC 안에서 트래픽이 올라오지 않으면 아무 일도 일어나지 않습니다. 모듈 1의 라우팅 테이블에
+Transit Gateway 를 대상으로 하는 경로를 넣어야 합니다.
+
+| VPC A 서브넷 라우팅 테이블 | 대상 |
+|---|---|
+| `10.1.0.0/16` | `local` |
+| `0.0.0.0/0` | `tgw-id` |
+
+온프레미스 라우터도 VPC 를 알아야 합니다. **VPN 연결에 연관된 테이블의 경로가 BGP 로
+고객 게이트웨이에 광고**되므로, `rtb-vpn` 에 실린 `10.1.0.0/16` 과 `10.2.0.0/16` 이 온프레미스
+BGP 테이블에 들어갑니다. 이것이 온프레미스 → VPC 방향을 성립시키는 마지막 조각입니다.
+
+#### 3.4.7 패킷 세 개로 검증하기 🆕
+
+```text
+[허용]  VPC A(10.1.0.5)  ->  On-premises(10.99.99.5)
+        Subnet RT : 0.0.0.0/0 -> tgw-id
+        TGW       : rtb-spoke 조회 (A 가 연관)
+                    -> 10.99.99.0/24 -> tgw-attach-vpn
+
+[허용]  On-premises(10.99.99.5)  ->  VPC A(10.1.0.5)
+        TGW       : rtb-vpn 조회 (VPN 이 연관)
+                    -> 10.1.0.0/16 -> tgw-attach-a
+        위 경우와 합쳐 양방향이 성립합니다
+
+[차단]  VPC A(10.1.0.5)  ->  VPC B(10.2.0.5)
+        Subnet RT : 0.0.0.0/0 -> tgw-id   (VPC 를 나가기는 합니다)
+        TGW       : rtb-spoke 조회 (A 가 연관)
+                    -> 10.2.0.0/16 일치 경로 없음 -> 폐기
+```
+
+세 번째 경우에서 짚을 것이 있습니다. **차단은 보안 그룹이나 네트워크 ACL 이 한 일이 아닙니다.**
+패킷은 VPC 를 정상적으로 나갔고, Transit Gateway 에서 **갈 곳이 없어서** 사라졌습니다.
+라우팅으로 만든 격리이므로, 트래픽이 흐르지 않는 이유를 찾을 때 보안 그룹만 보면
+답이 나오지 않습니다.
+
+#### 3.4.8 핵심 개념 네 개 정리 🆕
+
+| 개념 | 이 예시에서 한 일 | 한 문장 요약 |
+|---|---|---|
+| **연결**(attachment) | VPC A, VPC B, VPN 을 Transit Gateway 에 붙였습니다 | 무엇을 붙이는가 |
+| **Transit Gateway 라우팅 테이블** | `rtb-spoke`, `rtb-vpn` 두 개를 만들었습니다 | 어디로 보낼지 적어 두는 표 |
+| **연관**(association) | VPC 둘은 `rtb-spoke`, VPN 은 `rtb-vpn` 을 보게 했습니다 | **들어온 패킷이 조회할** 테이블 (연결당 1개) |
+| **경로 전파**(route propagation) | VPC 경로는 `rtb-vpn` 에만, VPN 경로는 `rtb-spoke` 에만 심었습니다 | **내 경로가 실릴** 테이블 (여러 개 가능) |
+
+**연관과 전파를 반대 방향으로 걸어 두는 것**이 라우팅 도메인 분리의 기법입니다. 프로덕션과
+비프로덕션을 나누는 교재의 예시도 정확히 같은 구조이고, VPC 대신 도메인이 두 덩어리로
+늘어난 것뿐입니다.
+
+#### 3.4.9 실무에서 걸리는 지점 🆕
+
+| 지점 | 내용 |
+|---|---|
+| **기본 라우팅 테이블** | Transit Gateway 를 만들면 기본 라우팅 테이블이 함께 생기고, 그것이 **기본 연관 테이블이자 기본 전파 테이블**이 됩니다. 이 상태로 연결을 만들면 전부 한 테이블에 모여 **모두가 서로 통신합니다.** 생성 시 `기본 라우팅 테이블 연관`과 `기본 라우팅 테이블 전파`를 끄거나, 만든 뒤 연관·전파를 직접 옮기세요 |
+| **블랙홀 경로** | 명시적으로 버리고 싶으면 Transit Gateway 라우팅 테이블에 **블랙홀 경로**를 넣습니다. 일치하는 트래픽을 폐기합니다. "경로가 없어서 막힌다"보다 의도가 드러나므로 감사 관점에서 유용합니다 |
+| **정적 경로 우선순위** | 정적 경로와 전파된 경로의 대상이 같으면 **정적 경로가 이깁니다.** 전파된 경로는 테이블에 들어오지 않고, 정적 경로를 지우면 다시 들어옵니다 |
+| **CIDR 중복** | VPC 연결은 CIDR 이 겹칠 수 없으므로 ECMP 를 지원하지 않습니다. `10.1.0.0/16` 을 쓰는 VPC 두 개를 같은 Transit Gateway 에 붙여 부하를 나누는 구성은 불가능합니다 |
+| **테이블을 더 쪼갤 때** | VPC 마다 라우팅 테이블을 따로 두면 **격리된 라우터 여러 개**처럼 동작합니다. 공유 서비스 VPC 를 하나 두고 모든 VPC 가 그것만 함께 쓰게 하는 변형도 같은 방식으로 만듭니다(3.2 절의 공유 서비스 중앙화) |
+
+구성 명령은 콘솔·CLI 어느 쪽으로도 할 수 있습니다. CLI 는 개념 이름이 그대로 드러나서
+연관과 전파의 차이를 확인하기 좋습니다.
+
+```bash
+# 연관: 이 연결로 들어온 패킷이 조회할 테이블을 지정합니다 (연결당 하나)
+# VPC A 연결은 rtb-spoke 를 보게 합니다
+aws ec2 associate-transit-gateway-route-table \
+  --transit-gateway-route-table-id tgw-rtb-spoke \
+  --transit-gateway-attachment-id tgw-attach-a
+
+# 전파: 이 연결의 경로를 어느 테이블에 심을지 지정합니다 (여러 테이블 가능)
+# VPC A 의 10.1.0.0/16 을 rtb-vpn 에만 심습니다. rtb-spoke 에는 심지 않습니다
+aws ec2 enable-transit-gateway-route-table-propagation \
+  --transit-gateway-route-table-id tgw-rtb-vpn \
+  --transit-gateway-attachment-id tgw-attach-a
+```
+
+> — 출처: [How AWS Transit Gateway works](https://docs.aws.amazon.com/vpc/latest/tgw/how-transit-gateways-work.html)
+
+> — 출처: [Associate a transit gateway route table in AWS Transit Gateway](https://docs.aws.amazon.com/vpc/latest/tgw/associate-tgw-route-table.html)
+
+> — 출처: [Enable route propagation to a transit gateway route table in AWS Transit Gateway](https://docs.aws.amazon.com/vpc/latest/tgw/enable-tgw-route-propagation.html)
+
+> — 출처: [Create a transit gateway in AWS Transit Gateway](https://docs.aws.amazon.com/vpc/latest/tgw/create-tgw.html)
 
 ### 3.5 쿼터와 성능
 
@@ -249,56 +492,6 @@ Transit Gateway 당 CIDR 블록 5개, 최대 5,000개 VPC 연결이라는 수치
 보다 쿼터 문서를 확인하는 습관**을 들이세요.
 
 > — 출처: [What is a transit gateway?](https://docs.aws.amazon.com/vpc/latest/tgw/what-is-transit-gateway.html)
-
-### 3.6 한 층 위의 선택지: Amazon VPC Lattice 🆕
-
-> **먼저 짚을 것**: VPC Lattice 는 **2023년 3월 31일에 GA** 되었습니다(문서 이력 기준).
-> 이 과정의 덱이 만들어진 시기(2023년 4\~8월)와 거의 겹칩니다. 즉 **신규 서비스라서
-> 교재에 없는 것이 아니라, 교재가 다루기로 선택하지 않은 것**입니다.
-
-교재는 VPC 연결 옵션을 피어링과 Transit Gateway 둘로 제시합니다. 둘 다 **계층 3 에서
-네트워크를 붙이는** 방식입니다. 그런데 실제로 개발자가 원하는 것은 종종
-"**서비스 A 가 서비스 B 를 부를 수 있게 해 달라**"입니다.
-
-**Amazon VPC Lattice** 는 그 요구를 애플리케이션 계층에서 처리하는 완전관리형
-**애플리케이션 네트워킹 서비스**입니다. 단일 VPC 안에서도, 여러 계정의 여러 VPC 에
-걸쳐서도 쓸 수 있습니다.
-
-핵심 구성 요소:
-
-| 구성 요소 | 내용 |
-|---|---|
-| **서비스**(service) | 독립적으로 배포되는 소프트웨어 단위. EC2, ECS/EKS/Fargate 컨테이너, Lambda 함수에서 실행됩니다. **대상 그룹 + 리스너 + 규칙**으로 구성됩니다 |
-| **대상 그룹** | 대상의 모음. ELB 의 대상 그룹과 **비슷하지만 서로 호환되지 않습니다**. 지원 대상은 EC2 인스턴스, IP 주소, Lambda 함수, **Application Load Balancer**, ECS 태스크, Kubernetes 파드 |
-| **리스너 / 규칙** | ELB 와 같은 개념입니다. 규칙은 우선순위 + 작업 + 조건으로 구성됩니다 |
-| **서비스 네트워크** | 서비스와 리소스 구성의 **논리적 경계**. 같은 서비스 네트워크에 연결된 클라이언트와 서비스는 권한이 있으면 서로 통신할 수 있습니다 |
-| **리소스 구성 / 리소스 게이트웨이** | RDS 데이터베이스, 도메인 이름 대상, IP 주소 같은 **리소스**를 서비스 네트워크에 올리는 수단 |
-| **서비스 디렉터리** | 내가 소유하거나 AWS RAM 으로 공유받은 모든 VPC Lattice 서비스의 중앙 레지스트리 |
-| **인증 정책**(auth policy) | 서비스 접근을 정의하는 **세분화된 권한 부여 정책**. 서비스 개별 또는 서비스 네트워크에 붙입니다 |
-
-**교재 내용과 이어지는 지점이 두 개 있습니다.**
-
-첫째, **CIDR 중복 문제**입니다. 2.3 절에서 VPC 피어링은 CIDR 이 겹치면 아예 연결할 수
-없다고 배웠습니다. VPC Lattice 는 **중복 CIDR 을 지원합니다**. 인수·합병으로 주소 공간이
-겹치는 상황에서 선택지가 됩니다.
-
-둘째, **역할 분리**입니다. 서비스 네트워크 소유자(보통 네트워크·클라우드 관리자)가
-경계와 접근 제어를 관리하고, 서비스 소유자(보통 개발자)가 서비스와 라우팅 규칙을
-만듭니다. 네트워크 팀과 개발 팀의 책임 경계가 서비스 자체에 들어 있습니다.
-
-서비스 검색은 DNS 로 동작합니다. 클라이언트가 서비스의 DNS 이름을 쓰면
-**Route 53 Resolver** 가 트래픽을 VPC Lattice 로 보내고, VPC Lattice 가 목적지 서비스를
-식별합니다. 모듈 4의 Route 53 Resolver 가 여기서 다시 나옵니다.
-
-| | VPC 피어링 | Transit Gateway | **VPC Lattice** |
-|---|---|---|---|
-| 계층 | 3 | 3 | **7 (애플리케이션)** |
-| 연결 단위 | VPC ↔ VPC | VPC ↔ 허브 | **서비스 ↔ 서비스** |
-| 중복 CIDR | 불가 | 제약 있음 | **지원** |
-| 인증·권한 부여 | 보안 그룹 | 보안 그룹 | **인증 정책** |
-| 관찰성 | VPC 플로 로그 | 플로 로그 | 서비스 수준 |
-
-> — 출처: [What is Amazon VPC Lattice?](https://docs.aws.amazon.com/vpc-lattice/latest/ug/what-is-vpc-lattice.html)
 
 ---
 
@@ -364,18 +557,30 @@ VPC `172.16.0.0/16` 의 예:
 갑니다. 서비스의 DNS 이름이 엔드포인트의 프라이빗 IP 로 확인되기 때문입니다.
 
 ```text
-VPC 172.16.0.0/16
-├─ 퍼블릭 서브넷  172.16.0.0/24 ── 인스턴스 A
-└─ 프라이빗 서브넷 172.16.1.0/24 ── 인스턴스 B
-                                   └─ 인터페이스 엔드포인트 172.16.1.6
-                                      ssm.region.amazonaws.com  →  AWS Systems Manager
+VPC  172.16.0.0/16
+|
++-- Public subnet    172.16.0.0/24  ---  Instance A
+|
++-- Private subnet   172.16.1.0/24  ---  Instance B
+                                             |
+                                             v
+                               Interface endpoint  172.16.1.6
+                               ssm.<region>.amazonaws.com
+                                             |
+                                             v
+                                   AWS Systems Manager
 ```
+
+프라이빗 서브넷의 **인스턴스 B** 가 Systems Manager 를 부를 때, 서브넷 안의
+**엔드포인트 프라이빗 IP(`172.16.1.6`)** 로 이름이 확인됩니다. 라우팅 테이블은 그대로입니다.
 
 지원 서비스 예: Amazon API Gateway, AWS CloudFormation, Amazon CloudWatch,
 Amazon CloudWatch Logs, AWS CodeBuild, AWS Config, Amazon EC2 API,
 Elastic Load Balancing API, AWS Key Management Service, Amazon Kinesis Data Streams,
 Amazon SageMaker 런타임, AWS Secrets Manager, AWS Systems Manager 등.
-**목록은 계속 늘어나므로** 최신 목록은 PrivateLink 문서를 확인하세요.
+**목록은 계속 늘어나므로** 최신 목록은
+[AWS services that integrate with AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html)
+에서 확인하세요.
 
 엔드포인트 서비스에는 AWS 관리형 서비스뿐 아니라 **다른 AWS 고객·파트너가 자기 VPC 에서
 호스팅하는 서비스**와 AWS Marketplace 파트너 서비스도 포함됩니다. 즉 PrivateLink 는
@@ -443,9 +648,246 @@ Amazon Route 53 입니다. 목록은 늘어나므로 위 CLI 로 확인하는 �
 
 ---
 
-## 5. 엣지 로케이션과 AWS 글로벌 네트워크
+## 5. 서비스 간 통신 🆕
 
-### 5.1 엣지 로케이션이란
+> **먼저 짚을 것**: VPC Lattice 는 **2023년 3월 31일에 GA** 되었습니다(문서 이력 기준).
+> 이 과정의 덱이 만들어진 시기(2023년 4\~8월)와 거의 겹칩니다. 즉 **신규 서비스라서
+> 교재에 없는 것이 아니라, 교재가 다루기로 선택하지 않은 것**입니다.
+
+2장부터 4장까지 본 것은 모두 **네트워크를 붙이는** 방법입니다. VPC 피어링과 Transit Gateway
+는 계층 3 에서 VPC 를 잇고, VPC 엔드포인트는 프라이빗 서브넷에서 AWS 서비스에 닿게 합니다.
+그런데 실제로 개발자가 원하는 것은 종종
+"**서비스 A 가 서비스 B 를 부를 수 있게 해 달라**"입니다.
+
+여기에 답하는 AWS 옵션이 **두 개**입니다. **VPC 엔드포인트 서비스**(AWS PrivateLink)와
+**Amazon VPC Lattice** 입니다. 둘 다 "서비스를 프라이빗하게 노출해 다른 VPC·계정에서
+부르게 한다"는 같은 문장으로 소개되지만, **노출 단위와 통제 지점이 다릅니다.**
+
+교재는 이 둘 중 어느 쪽도 정면으로 다루지 않습니다. 4.4 절 끝에서 "내 서비스를 다른 계정에
+프라이빗하게 노출하는" 용도를 한 줄 언급하는 것이 전부입니다. 먼저 갈라 놓고 VPC Lattice
+로 들어가겠습니다.
+
+### 5.1 VPC 엔드포인트 서비스가 하는 일
+
+4.4 절에서 한 줄로 지나간 기능을 **제공자 관점에서** 펼쳐 봅니다. 4장이 소비자 쪽
+(엔드포인트를 만들어 쓰는 쪽)이었다면, 여기서는 서비스를 내놓는 쪽을 봅니다.
+
+제공자가 **Network Load Balancer** 를 서비스의 프런트엔드로 두고, 그 로드 밸런서를 지정해
+**엔드포인트 서비스**를 만듭니다. 소비자는 자기 VPC 에 **인터페이스 엔드포인트**를 만들고,
+지정한 서브넷마다 **엔드포인트 네트워크 인터페이스**가 생깁니다.
+
+```text
+[ CONSUMER account / VPC ]   [ PROVIDER account / VPC ]
+
+          client
+             |
+             v
+     Interface endpoint  ---->  Network Load Balancer  ---->  targets
+      (endpoint ENI)            (= endpoint service)
+```
+
+| 용어 | 뜻 |
+|---|---|
+| `Interface endpoint` | 인터페이스 엔드포인트. **소비자가** 자기 VPC 에 만듭니다 |
+| `endpoint ENI` | 엔드포인트 네트워크 인터페이스. 소비자가 지정한 서브넷마다 하나 생깁니다 |
+| `endpoint service` | 엔드포인트 서비스. **제공자가** NLB 를 지정해 만듭니다 |
+
+| 성질 | 내용 |
+|---|---|
+| 기본 접근 | **아무도 접근할 수 없습니다.** 제공자가 특정 AWS 프린시펄에 권한을 부여해야 합니다 |
+| 연결 개시 | **소비자가 개시**하고 제공자가 수락·거부합니다 |
+| 프로토콜 | 인터페이스 엔드포인트는 **TCP 또는 UDP** 트래픽을 엔드포인트 서비스로 보냅니다 |
+| 트래픽 경로 | AWS 네트워크 안에 머물고 퍼블릭 인터넷을 지나지 않습니다 |
+| 접근 통제 | 소비자는 **엔드포인트 정책**으로 어느 IAM 프린시펄이 이 엔드포인트를 쓸지 통제합니다 |
+
+정리하면 **"연결 하나 = 서비스 하나"** 이고, **계층 4 에서 포트를 열어 주는** 모델입니다.
+어플라이언스를 노출할 때는 Gateway Load Balancer 를 쓰는 변형도 있습니다.
+
+### 5.2 VPC Lattice 가 하는 일
+
+**Amazon VPC Lattice** 는 같은 요구를 애플리케이션 계층에서 처리하는 완전관리형
+**애플리케이션 네트워킹 서비스**입니다. 단일 VPC 안에서도, 여러 계정의 여러 VPC 에
+걸쳐서도 쓸 수 있습니다.
+
+핵심 차이는 **서비스 네트워크**라는 논리적 경계입니다. 서비스와 리소스 구성을 그 경계에
+올리고, 클라이언트가 있는 VPC 를 그 경계에 **연결**합니다. 연결된 VPC 의 클라이언트는
+권한이 있으면 경계 안의 서비스·리소스와 통신합니다.
+
+AWS 문서의 예시 시나리오를 그대로 옮기면 이렇습니다. 서비스 두 개와 리소스 하나가 한
+서비스 네트워크에 연관되어 있고, **VPC 네 개가 서로 다른 방식으로 붙어 있습니다.**
+위에서 아래로 읽으세요. 요청은 **클라이언트 VPC → 서비스 네트워크 → 서비스·리소스 구성 →
+대상이 있는 VPC** 순으로 흐릅니다.
+
+```text
+             VPC 1                               VPC 3
+       Service 1 targets                     clients only
+           + clients
+          assoc: YES                          assoc: YES
+               |                                   |
+               +-----------------+-----------------+
+                                 | requests
+                                 v
+   +============================================================+
+   |         SERVICE NETWORK  (boundary + auth policy)          |
+   +============================================================+
+             |                 |                   |
+             v                 v                   v
+         Service 1         Service 2        Resource config
+         (billing)         (payment)          assoc: YES
+        assoc: YES        assoc: YES
+             |                 |                   |
+             v                 v                   v
+      Target group 1    Target group 2     Resource gateway
+             |                 |                   |
+             v                 v                   v
+           VPC 1             VPC 2               VPC 4
+        assoc: YES         assoc: NO           assoc: NO
+         (targets)         (targets)        Resource 1 = DB
+```
+
+다이어그램의 영어 용어는 콘솔·문서 표기 그대로입니다. VPC Lattice 의 **핵심 구성 요소**가
+곧 이 용어들이므로 한 표에 모았습니다.
+
+| 용어 | 뜻 |
+|---|---|
+| `SERVICE NETWORK` | **서비스 네트워크.** 서비스와 리소스 구성의 **논리적 경계**입니다. 같은 서비스 네트워크에 연결된 클라이언트와 서비스는 권한이 있으면 서로 통신할 수 있습니다 |
+| `auth policy` | **인증 정책.** 서비스 접근을 정의하는 **세분화된 권한 부여 정책**입니다. 서비스 개별에도, 서비스 네트워크 전체에도 붙일 수 있습니다 |
+| `Service 1` / `Service 2` | **VPC Lattice 서비스.** 독립적으로 배포되는 소프트웨어 단위입니다. EC2, ECS/EKS/Fargate 컨테이너, Lambda 함수에서 실행되고 **대상 그룹 + 리스너 + 규칙**으로 구성됩니다 |
+| `Target group` | **대상 그룹.** 서비스가 실제로 요청을 보내는 대상의 모음입니다. ELB 의 대상 그룹과 **비슷하지만 서로 호환되지 않습니다.** 지원 대상은 EC2 인스턴스, IP 주소, Lambda 함수, **Application Load Balancer**, ECS 태스크, Kubernetes 파드 |
+| `Resource config` | **리소스 구성.** RDS 데이터베이스, 도메인 이름 대상, IP 주소 같은 **리소스**를 서비스 네트워크에 올리는 논리 객체입니다 |
+| `Resource gateway` | **리소스 게이트웨이.** 리소스가 있는 VPC 로 들어가는 **진입점**입니다 |
+| `assoc: YES` / `assoc: NO` | 서비스 네트워크에 **연관시켰는지** 여부 |
+| `Listener` / `Rule` ※ | **리스너 / 규칙.** ELB 와 같은 개념입니다. 규칙은 **우선순위 + 작업 + 조건**으로 구성되고, 리스너가 요청을 어느 대상 그룹으로 보낼지 정합니다 |
+| `Service directory` ※ | **서비스 디렉터리.** 내가 소유하거나 AWS RAM 으로 공유받은 **모든 VPC Lattice 서비스의 중앙 레지스트리**입니다 |
+
+※ 표시한 둘은 다이어그램에 그리지 않았습니다. 리스너·규칙은 서비스 안에 들어 있고, 서비스
+디렉터리는 특정 서비스 네트워크가 아니라 **계정 전체**의 목록이기 때문입니다.
+
+**VPC 1 이 위와 아래에 두 번 나오는 것이 오타가 아닙니다.** VPC 1 은 서비스 1 의 대상이
+있으면서(아래) 동시에 클라이언트로서 요청을 보내기도(위) 합니다. 이것이 **양방향** VPC 입니다.
+반환 트래픽 화살표는 그리지 않았습니다. AWS 문서 다이어그램도 같은 이유로 생략합니다.
+
+**연관(assoc)이 어디는 YES 이고 어디는 NO 인지**가 이 그림의 핵심입니다.
+
+- **서비스 2 개와 리소스 구성은 셋 다 `YES`** 입니다. 연관해야 경계 안에서 검색되기 때문입니다
+- **VPC 는 1·3 만 `YES`** 입니다. 이 둘에만 클라이언트가 있습니다
+- **VPC 2·4 는 `NO`** 입니다. 요청을 받아 응답만 하면 되므로 연관이 필요 없습니다
+
+| 구성 요소 | 이 예시에서 무엇인가 | 서비스 네트워크와의 관계 |
+|---|---|---|
+| **VPC 1** | 서비스 1(청구 애플리케이션)의 대상 인스턴스가 있습니다 | **VPC 연관 O** — 인바운드·아웃바운드 양방향. 이 VPC 의 리소스는 클라이언트도 될 수 있습니다 |
+| **VPC 2** | 서비스 2(결제 애플리케이션)의 대상 인스턴스가 있습니다 | **VPC 연관 X** — **인바운드 전용.** 요청을 받아 같은 요청으로 응답만 하면 되므로 연관이 필요 없습니다 |
+| **VPC 3** | 클라이언트만 있고 서비스는 없습니다 | **VPC 연관 O** — **아웃바운드 전용** |
+| **VPC 4** | 리소스 1(고객 데이터 데이터베이스)과 리소스 게이트웨이가 있습니다 | **VPC 연관 X** — **인바운드 전용** |
+
+**교재 내용과 이어지는 지점**은 **역할 분리**입니다. 서비스 네트워크 소유자(보통
+네트워크·클라우드 관리자)가 경계와 접근 제어를 관리하고, 서비스 소유자(보통 개발자)가
+서비스와 라우팅 규칙을 만듭니다. 네트워크 팀과 개발 팀의 책임 경계가 서비스 자체에
+들어 있습니다.
+
+보안은 여러 겹으로 쌓입니다. 첫 겹은 **서비스·리소스 구성·VPC 연관·서비스 네트워크 유형
+엔드포인트의 조합**입니다. VPC 연관도 서비스 네트워크 엔드포인트도 없으면 클라이언트는
+아예 접근하지 못합니다. 둘째 겹은 **VPC 와 서비스 네트워크의 연관에 붙이는 보안 그룹**,
+셋째·넷째 겹은 서비스 네트워크 수준과 서비스 수준의 **인증 정책**입니다.
+
+서비스 검색은 DNS 로 동작합니다. 클라이언트가 서비스의 DNS 이름을 쓰면
+**Route 53 Resolver** 가 트래픽을 VPC Lattice 로 보내고, VPC Lattice 가 목적지 서비스를
+식별합니다. 모듈 4의 Route 53 Resolver 가 여기서 다시 나옵니다.
+
+### 5.3 VPC Lattice 동작 절차
+
+AWS 문서가 제시하는 작업 순서입니다. **누가 하는 일인지**를 함께 보세요. 서비스 네트워크
+소유자와 서비스·리소스 소유자가 나뉘는 지점이 곧 5.2 절 끝에서 본 **역할 분리**입니다.
+
+| 단계 | 작업 | 누가 | 내용 |
+|---|---|---|---|
+| 1 | **서비스 네트워크 생성** | 서비스 네트워크 소유자 | 경계를 먼저 만듭니다 |
+| 2 | **서비스 생성** | 각 서비스 소유자 | 서비스 1, 서비스 2 를 만듭니다. 생성할 때 **리스너를 추가하고 대상 그룹으로 요청을 보내는 규칙**을 정의합니다 |
+| 3 | **라우팅 정의** | 각 서비스 소유자 | 서비스가 실행되는 **대상 인스턴스와 그 대상이 있는 VPC** 를 지정해 대상 그룹을 만듭니다 |
+| 4 | **서비스를 서비스 네트워크에 연관** | 서비스 네트워크 소유자 **또는** 서비스 소유자 | 연관하면 그 서비스가 **같은 서비스 네트워크의 다른 서비스와, 연결된 VPC 의 클라이언트에게 검색 가능**해집니다 |
+| 5 | **리소스 게이트웨이 생성** | 리소스 소유자 | 리소스가 있는 VPC 4 에 만듭니다. 클라이언트가 리소스 1 에 닿을 수 있게 하는 **진입점**입니다 |
+| 6 | **리소스 구성 생성** | 리소스 소유자 | 리소스 1 을 대표하는 논리 객체를 만들고 **어느 리소스 게이트웨이를 쓸지** 지정합니다 |
+| 7 | **리소스 구성을 서비스 네트워크에 연관** | 서비스 네트워크 소유자 **또는** 리소스 소유자 | 연관하면 리소스 구성도 검색 가능해집니다 |
+| 8 | **VPC 를 서비스 네트워크에 연결** | 서비스 네트워크 소유자 | VPC 1 과 VPC 3 을 연관시킵니다. 연관된 VPC 의 **어떤 리소스든 클라이언트가 되어** 서비스 네트워크로 연결을 개시할 수 있습니다 |
+
+몇 가지를 더 짚어 두겠습니다.
+
+- **연결 개시 방향과 응답 방향은 다릅니다.** 서비스 네트워크는 서비스 1 의 대상 그룹이
+  가리키는 리소스로만 연결을 개시합니다. 반환 트래픽은 서비스 네트워크를 통해 클라이언트로
+  되돌아갑니다
+- **AZ 어피니티**가 3단계에 걸립니다. 클라이언트가 요청을 보내면 VPC Lattice 는
+  **클라이언트와 같은 AZ** 의 서비스·리소스 IP 주소로 응답합니다. 그 AZ 를 쓸 수 없으면
+  다른 AZ 의 주소로 응답합니다. VPC Lattice 에는 **AZ 간 데이터 전송 요금이 없습니다**
+- 이 예시의 세 가지 패턴을 이름 붙이면 이렇습니다. **인바운드 전용**(VPC 2, VPC 4),
+  **아웃바운드 전용**(VPC 3), **양방향**(VPC 1)
+
+### 5.4 무엇이 다른가
+
+| 항목 | VPC 엔드포인트 서비스 (PrivateLink) | Amazon VPC Lattice |
+|---|---|---|
+| **노출 단위** | 엔드포인트 서비스 **1개** | 서비스 네트워크 **1개에 서비스·리소스 여러 개** |
+| **소비자가 만드는 것** | 서비스마다 **인터페이스 엔드포인트 1개** | 서비스 네트워크에 **VPC 를 연관** |
+| **프런트엔드** | **Network Load Balancer 필수** | 필요 없습니다. 대상 그룹에 직접 등록합니다 |
+| **프로토콜** | **TCP·UDP** | 리스너는 **HTTP·HTTPS·TLS**, 포트 1\~65535. HTTP/1.1·HTTP/2 를 다루고 **WebSockets 는 네이티브 미지원** |
+| **라우팅 판단** | 계층 4. NLB 가 대상으로 분산합니다 | 계층 7. **리스너 규칙**(우선순위 + 조건 + 작업)으로 판단합니다 |
+| **대상 유형** | Network Load Balancer 의 대상 그룹 | EC2 인스턴스, IP 주소, **Lambda 함수**, **Application Load Balancer**, ECS 태스크, Kubernetes 파드 |
+| **권한 부여** | 제공자가 **허용 프린시펄** 지정 + 소비자의 엔드포인트 정책 | **인증 정책**(auth policy). 서비스별·서비스 네트워크별 IAM 기반 |
+| **공유·승인 방식** | 소비자가 엔드포인트를 만들어 요청 → 제공자가 수락·거부 | **AWS RAM** 으로 서비스·서비스 네트워크를 공유 |
+| **전송 중 암호화** | **네이티브 암호화만** | 네이티브 + **보조 TLS 암호화** |
+| **관찰성** | 이번 검증에서 요청 단위 관찰성 기능을 확인하지 못했습니다 | **요청·응답마다** 지표와 로그. CloudWatch Logs, Firehose, S3 |
+| **중복 CIDR** | **지원** | **지원** |
+| **AZ 간 데이터 전송 요금** | NLB 교차 영역 로드 밸런싱을 켜면 EC2 데이터 전송 요금이 발생합니다 | **없습니다.** AZ 어피니티로 클라이언트와 같은 AZ 의 주소를 먼저 돌려줍니다 |
+| **온프레미스에서 접근** | 기존 계층 3 연결(Direct Connect·VPN)을 거쳐야 합니다 | **서비스 네트워크 유형 VPC 엔드포인트**를 두면 Direct Connect·VPN 으로 접근할 수 있습니다. VPC 피어링이나 Transit Gateway 를 지나는 트래픽도 이 엔드포인트로 접근할 수 있습니다 |
+
+**둘 다 중복 CIDR 을 지원합니다.** 2.3 절에서 VPC 피어링은 CIDR 이 겹치면 아예 연결할 수
+없다고 배웠습니다. 인수·합병으로 주소 공간이 겹칠 때 피어링·Transit Gateway 대신 이 두
+옵션을 보는 이유입니다.
+
+### 5.5 언제 무엇을 고르나
+
+| 조건 | 선택 |
+|---|---|
+| 노출할 서비스가 하나이고 TCP·UDP 로 충분하다 | **VPC 엔드포인트 서비스** |
+| HTTP 계열이 아닌 프로토콜을 써야 한다 (데이터베이스 프로토콜 등) | **VPC 엔드포인트 서비스** |
+| 이미 NLB 뒤에 서비스가 있다 | **VPC 엔드포인트 서비스** |
+| WebSocket 을 써야 한다 | **VPC 엔드포인트 서비스**. VPC Lattice 는 네이티브로 지원하지 않습니다 |
+| 서비스가 여럿이고, 소비자가 서비스마다 엔드포인트를 만드는 것을 피하고 싶다 | **VPC Lattice** |
+| 경로·헤더 같은 요청 내용으로 라우팅하고 싶다 | **VPC Lattice** |
+| 호출자 신원(IAM)으로 서비스 접근을 통제하고 싶다 | **VPC Lattice** |
+| 요청 단위 지표·로그가 필요하다 | **VPC Lattice** |
+| 서비스가 EC2·Lambda·ECS·EKS 에 섞여 있다 | **VPC Lattice** |
+
+**둘은 배타적이지 않습니다.** VPC Lattice 서비스 네트워크를 온프레미스나 다른 VPC 에서
+쓸 때 필요한 **서비스 네트워크 유형 VPC 엔드포인트**가 바로 PrivateLink 로 동작합니다.
+VPC Lattice 를 쓰면서 PrivateLink 를 함께 쓰는 구성이 정상입니다.
+
+2장부터 여기까지 본 네 가지 연결 옵션을 한 줄에 놓으면 이렇습니다.
+
+| | VPC 피어링 | Transit Gateway | 엔드포인트 서비스 | **VPC Lattice** |
+|---|---|---|---|---|
+| 계층 | 3 | 3 | 4 | **7 (애플리케이션)** |
+| 연결 단위 | VPC ↔ VPC | VPC ↔ 허브 | 소비자 ↔ 서비스 1개 | **서비스 ↔ 서비스** |
+| 중복 CIDR | 불가 | 제약 있음 | 지원 | **지원** |
+| 인증·권한 부여 | 보안 그룹 | 보안 그룹 | 허용 프린시펄 + 엔드포인트 정책 | **인증 정책** |
+| 관찰성 | VPC 플로 로그 | 플로 로그 | 확인하지 못했습니다 | **요청 단위** |
+
+> — 출처: [What is Amazon VPC Lattice?](https://docs.aws.amazon.com/vpc-lattice/latest/ug/what-is-vpc-lattice.html)
+
+> — 출처: [How VPC Lattice works](https://docs.aws.amazon.com/vpc-lattice/latest/ug/how-it-works.html)
+
+> — 출처: [AWS PrivateLink concepts](https://docs.aws.amazon.com/vpc/latest/privatelink/concepts.html)
+
+> — 출처: [Share your services through AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html)
+
+> — 출처: [Listeners for your VPC Lattice service](https://docs.aws.amazon.com/vpc-lattice/latest/ug/listeners.html)
+
+> — 출처: [Overview of AWS networking services for SaaS offerings](https://docs.aws.amazon.com/prescriptive-guidance/latest/saas-network-access-options/services.html)
+
+---
+
+## 6. 엣지 로케이션과 AWS 글로벌 네트워크
+
+### 6.1 엣지 로케이션이란
 
 **AWS 서비스 요청자에게 가장 가까운 지점**이며 전 세계 주요 도시에 있습니다.
 AWS 는 이를 **PoP(points of presence)** 라 부릅니다.
@@ -458,7 +900,7 @@ Amazon Route 53**. 이 서비스들은 인터넷이 아니라 **AWS 글로벌 �
 > 현재 값은 [AWS 글로벌 인프라](https://aws.amazon.com/about-aws/global-infrastructure/)
 > 페이지에서 확인하세요. 교재도 강사에게 같은 방식으로 안내합니다.
 
-### 5.2 왜 홉을 줄이는 것이 중요한가
+### 6.2 왜 홉을 줄이는 것이 중요한가
 
 퍼블릭 인터넷의 혼잡과 예측 불가능성이 사용자 경험을 망치는 주요 원인입니다.
 
@@ -474,7 +916,7 @@ Amazon Route 53**. 이 서비스들은 인터넷이 아니라 **AWS 글로벌 �
 > 문장이 있는데, 같은 슬라이드 강사 노트는 홉이 많을수록 지연 시간이 늘어난다고 설명합니다.
 > **강사 노트 쪽이 맞고, 본문 문장은 번역 오류로 보입니다.**
 
-### 5.3 문제별 도구 선택
+### 6.3 문제별 도구 선택
 
 | 문제 | 해결 |
 |---|---|
@@ -484,9 +926,9 @@ Amazon Route 53**. 이 서비스들은 인터넷이 아니라 **AWS 글로벌 �
 
 ---
 
-## 6. Amazon CloudFront
+## 7. Amazon CloudFront
 
-### 6.1 무엇을 하는가
+### 7.1 무엇을 하는가
 
 - 정적 및 동적 웹 콘텐츠의 **배포 속도를 높입니다**
 - 콘텐츠를 **캐시**하고 엣지 로케이션을 통해 전송합니다
@@ -495,7 +937,7 @@ Amazon Route 53**. 이 서비스들은 인터넷이 아니라 **AWS 글로벌 �
 효과는 두 방향입니다. AWS 백본을 쓰므로 요청이 통과하는 네트워크 수가 줄어 **첫 바이트
 지연 시간이 감소**하고, 파일 복사본이 전 세계에 캐시되므로 **신뢰성과 가용성이 향상**됩니다.
 
-### 6.2 사용 사례
+### 7.2 사용 사례
 
 | 사용 사례 | 내용 |
 |---|---|
@@ -510,7 +952,7 @@ VOD 스트리밍 형식은 **MPEG DASH, Apple HLS, Microsoft Smooth Streaming, C
 지원합니다. 라이브 스트림은 엣지에서 미디어 조각을 캐시하고 매니페스트 요청을 결합해
 오리진 로드를 줄입니다.
 
-### 6.3 구성 2단계
+### 7.3 구성 2단계
 
 **1단계 — 오리진 선택**
 
@@ -529,7 +971,85 @@ VOD 스트리밍 형식은 **MPEG DASH, Apple HLS, Microsoft Smooth Streaming, C
 CloudFront 는 새 배포에 도메인 이름을 할당하고, **콘텐츠를 제외한 배포 구성을 모든
 엣지 로케이션에 전송**합니다.
 
-### 6.4 세 가지 정책
+### 7.4 캐시 키란 무엇인가 🆕
+
+교재는 캐시 정책을 설명하면서 "캐시 키"라는 말을 쓰지만 그것이 무엇인지는 정의하지
+않습니다. 이 절에서 먼저 짚습니다.
+
+**캐시 키는 캐시에 있는 객체의 고유 식별자**입니다. 캐시의 각 객체는 고유한 캐시 키를
+하나씩 갖습니다. 뷰어 요청이 **이전 요청과 같은 캐시 키를 만들어 내고** 그 키의 객체가
+엣지 로케이션 캐시에 유효한 상태로 있으면 **캐시 적중**입니다.
+
+**기본 캐시 키에 들어가는 것은 두 개뿐입니다.**
+
+| 기본 캐시 키 구성 요소 | 예 |
+|---|---|
+| CloudFront 배포의 **도메인 이름** | `d111111abcdef8.cloudfront.net` |
+| 요청된 객체의 **URL 경로** | `/content/stories/example-story.html` |
+
+**뷰어 요청의 나머지 값은 기본적으로 들어가지 않습니다.** 쿼리 문자열, 헤더, 쿠키 전부
+그렇습니다. 그래서 아래 두 요청은 **같은 캐시 키**를 만들고, 두 번째 요청은 캐시 적중이
+됩니다.
+
+```text
+GET /content/stories/example-story.html?ref=0123abc&split-pages=false
+Host: d111111abcdef8.cloudfront.net
+User-Agent: Mozilla/5.0 Gecko/20100101 Firefox/68.0
+Cookie: session_id=01234abcd
+Referer: https://news.example.com/
+
+GET /content/stories/example-story.html?ref=xyz987&split-pages=true
+Host: d111111abcdef8.cloudfront.net
+User-Agent: Mozilla/5.0 AppleWebKit/537.36 Chrome/83.0
+Cookie: session_id=wxyz9876
+Referer: https://rss.news.example.net/
+
+쿼리 문자열 · User-Agent · Cookie · Referer 가 모두 다르지만
+캐시 키는 같습니다  ->  두 번째 요청은 캐시 적중
+```
+
+예외가 하나 있습니다. `OPTIONS` 요청에서는 **`OPTIONS` 메서드가 캐시 키에 포함**됩니다.
+따라서 `OPTIONS` 응답은 `GET`·`HEAD` 응답과 **따로 캐시**됩니다.
+
+**언제 캐시 키에 값을 더하는가.** 판단 기준은 하나입니다.
+
+> **그 값이 오리진이 돌려주는 응답을 바꾸는가.** 바꾸면 넣고, 바꾸지 않으면 넣지 않습니다.
+
+오리진이 `Accept-Language` 헤더를 보고 언어별 콘텐츠를 돌려준다면 그 헤더는 캐시 키에
+들어가야 합니다. 넣으면 CloudFront 는 그 헤더로 캐시 적중을 판단하고, 캐시 누락 시
+**오리진 요청에도 그 헤더를 포함**시킵니다.
+
+**넣으면 치르는 대가는 객체 중복입니다.** `Accept-Language` 하나만 봐도 뷰어는 이런 값을
+보냅니다.
+
+```text
+en-US,en
+en,en-US
+en-US, en
+en-US
+```
+
+전부 "영어"라는 같은 뜻인데 **객체가 네 번 캐시**됩니다. 캐시 적중률이 떨어지고 오리진
+요청이 늘어납니다. 이런 경우에는 헤더를 캐시 키에서 빼고 **URL 로 언어를 구분**하는 편이
+낫습니다. `/en-US/content/stories/example-story.html` 처럼요.
+
+**캐시 키에 넣지 말아야 할 대표 후보**입니다.
+
+| 값 | 이유 |
+|---|---|
+| `User-Agent` | 고유 변형이 **수천 가지**입니다. 넣으면 사실상 뷰어마다 객체가 하나씩 생깁니다 |
+| 사용자·세션별 쿠키 | 수천\~수백만 요청에 걸쳐 값이 전부 다릅니다 |
+
+그래도 오리진이 분석·텔레메트리 목적으로 이 값들을 **받아야 한다면**, 그리고 그 값이
+**응답을 바꾸지 않는다면**, 캐시 키에는 넣지 말고 **오리진 요청 정책**으로 보냅니다.
+7.5 절에서 두 정책을 갈라 두는 이유가 이것입니다.
+
+캐시 키는 캐시 정책으로 바꾸는 것이 기본이지만, **뷰어 요청에서 실행되는 Lambda@Edge
+함수나 CloudFront Functions 로도** 바꿀 수 있습니다.
+
+> — 출처: [Understand the cache key](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/understanding-the-cache-key.html)
+
+### 7.5 세 가지 정책
 
 | 정책 | 무엇을 정하는가 |
 |---|---|
@@ -540,7 +1060,65 @@ CloudFront 는 새 배포에 도메인 이름을 할당하고, **콘텐츠를 �
 캐시 정책과 오리진 요청 정책의 관계가 중요합니다. 예를 들어 `User-Agent` 를 오리진이
 알아야 하지만 캐시를 기기별로 쪼개고 싶지 않다면, **오리진 요청 정책에만** 넣습니다.
 
-### 6.5 캐시 적중과 캐시 누락
+### 7.6 관리형 정책: 캐시 키 프리셋 🆕
+
+정책을 매번 직접 설계할 필요는 없습니다. CloudFront 는 **관리형 정책**(managed policy)을
+제공합니다. 특정 사용 사례에 맞게 최적화된 설정이 이미 들어 있고, 배포의 **캐시 동작**에
+붙여 쓰면 됩니다. 콘솔에서는 **이름**으로, CloudFormation·AWS CLI·SDK 에서는 **ID** 로
+붙입니다.
+
+**가장 많이 쓰는 관리형 캐시 정책 세 개**입니다.
+
+| 관리형 캐시 정책 | TTL (최소 / 기본 / 최대) | 캐시 키에 넣는 것 | 언제 쓰나 |
+|---|---|---|---|
+| **CachingOptimized** | 1초 / 24시간 / 365일 | 헤더·쿠키·쿼리 문자열 **없음**. 압축 객체 캐싱이 켜져 있어 정규화된 `Accept-Encoding` 만 들어갑니다 | **정적 콘텐츠의 기본 선택.** 캐시 키를 최소화해 캐시 효율을 높입니다. Gzip·Brotli 압축본을 따로 캐시합니다 |
+| **CachingOptimizedForUncompressedObjects** | 1초 / 24시간 / 365일 | 아무것도 없음 | 위와 동일하지만 **압축 객체 캐싱이 꺼져 있습니다** |
+| **CachingDisabled** | 0 / 0 / 0 | 없음 | **동적 콘텐츠**, 캐시할 수 없는 요청 |
+
+CLI·CloudFormation 용 ID 입니다.
+
+```text
+CachingOptimized
+  658327ea-f89d-4fab-a63d-7e88639e58f6
+
+CachingOptimizedForUncompressedObjects
+  b2884449-e4de-46a7-ac36-70bc7f1ddd6d
+
+CachingDisabled
+  4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+```
+
+**최소 TTL 이 0보다 크면 함정이 하나 있습니다.** 오리진이 `Cache-Control: no-cache`,
+`no-store`, `private` 를 보내도 CloudFront 는 **최소 TTL 만큼은 캐시합니다.**
+`CachingOptimized` 계열이 여기 해당합니다(최소 TTL 1초).
+
+나머지 관리형 캐시 정책은 오리진 종류에 맞춘 것들입니다.
+
+| 관리형 캐시 정책 | 용도 |
+|---|---|
+| **UseOriginCacheControlHeaders** | 오리진이 `Cache-Control` 응답 헤더를 돌려주고 **쿼리 문자열로 콘텐츠가 달라지지 않는** 경우. 기본 TTL 이 0초라 오리진의 헤더가 TTL 을 결정합니다. 캐시 키에는 `Host`, `Origin`, `X-HTTP-Method-Override`, `X-HTTP-Method`, `X-Method-Override` 와 모든 쿠키가 들어갑니다 |
+| **UseOriginCacheControlHeaders-QueryStrings** | 같은 조건에서 **쿼리 문자열로 콘텐츠가 달라지는** 경우. 위와 같고 **모든 쿼리 문자열**이 캐시 키에 추가됩니다 |
+| **Elemental-MediaPackage** | 오리진이 AWS Elemental MediaPackage 엔드포인트일 때. 캐시 키에 `Origin` 헤더와 `aws.manifestfilter`·`start`·`end`·`m` 쿼리 문자열이 들어갑니다 |
+| **Amplify** / **Amplify-Default** 등 | AWS Amplify 웹 앱 오리진용입니다. **Amplify 전용이며 일반 배포에는 권장하지 않습니다** |
+
+**오리진 요청 정책에도 관리형 프리셋이 있습니다.** 7.4 절에서 본 "캐시 키에는 넣지 말고
+오리진에만 보내기"를 그대로 구현해 둔 것들입니다.
+
+| 관리형 오리진 요청 정책 | 오리진으로 보내는 것 |
+|---|---|
+| **AllViewer** | 뷰어 요청의 헤더·쿠키·쿼리 문자열 **전부** |
+| **AllViewerExceptHostHeader** | `Host` 헤더만 빼고 전부. **API Gateway 와 Lambda 함수 URL 오리진용**입니다. 이 오리진들은 `Host` 에 배포 도메인이 아니라 **자기 도메인**이 들어오기를 기대하므로, 뷰어의 `Host` 를 그대로 넘기면 동작하지 않습니다 |
+| **AllViewerAndCloudFrontHeaders-2022-06** | 전부 + **2022년 6월까지 출시된** CloudFront 헤더(`CloudFront-Viewer-Country` 등). 그 이후 출시된 헤더는 포함되지 않습니다 |
+| **CORS-CustomOrigin** | `Origin` 헤더. 커스텀 오리진의 CORS 용 |
+| **CORS-S3Origin** | `Origin`, `Access-Control-Request-Headers`, `Access-Control-Request-Method`. S3 오리진의 CORS 용 |
+| **HostHeaderOnly** | `Host` 헤더만. 쿠키·쿼리 문자열 없음 |
+| **UserAgentRefererHeaders** | `User-Agent` 와 `Referer` 만. **7.4 절에서 "캐시 키에 넣지 마라"고 한 값을 오리진에만 보내는 전형적인 예입니다** |
+
+> — 출처: [Use managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html)
+
+> — 출처: [Use managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html)
+
+### 7.7 캐시 적중과 캐시 누락
 
 **캐시 누락**
 
@@ -562,13 +1140,21 @@ CloudFront → 뷰어:   200 OK  (그리고 엣지에 캐시)
 CloudFront → 뷰어:   200 OK   (오리진에 가지 않습니다)
 ```
 
-### 6.6 리전 엣지 캐시
+### 7.8 리전 엣지 캐시
 
 CloudFront 의 캐시는 **두 층**입니다.
 
 ```text
-뷰어  ←→  엣지 로케이션(PoP)  ←→  리전 엣지 캐시  ←→  오리진 서버
-          작지만 가까움           크고 오래 보관
+  Viewer
+    |
+    v
+  Edge location (PoP)        작지만 뷰어에 가장 가깝습니다
+    |
+    v
+  Regional edge cache        더 크고 객체가 오래 남습니다
+    |
+    v
+  Origin server
 ```
 
 동작 순서:
@@ -585,14 +1171,14 @@ CloudFront 의 캐시는 **두 층**입니다.
 공유하므로 오리진 요청이 줄어듭니다. CloudFront 는 오리진 서버와 **지속적인 연결**을
 유지해 필요할 때 빠르게 가져옵니다.
 
-### 6.7 Origin Shield
+### 7.9 Origin Shield
 
 리전 엣지 캐시 위에 한 층을 더 얹는 옵션이 **CloudFront Origin Shield** 입니다.
 모든 캐싱 계층에서 오리진으로 가는 요청이 **단일 위치**에서 발생하게 만들어,
 CloudFront 가 각 객체를 오리진 요청 한 번으로 가져올 수 있게 합니다. 캐시 적중률이
 올라갑니다.
 
-### 6.8 캐시 무효화
+### 7.10 캐시 무효화
 
 파일이 만료되기 전에 엣지 캐시에서 치우는 방법은 두 가지입니다.
 
@@ -601,7 +1187,7 @@ CloudFront 가 각 객체를 오리진 요청 한 번으로 가져올 수 있게
 | **무효화(invalidation)** | 엣지 캐시에서 파일을 제거합니다. 다음 요청 시 오리진에서 최신 버전을 가져옵니다 | 즉시 반영. 무효화 요청 수에 따라 비용이 발생할 수 있습니다 |
 | **파일 버전 관리** | 이름이 다른 버전을 제공합니다 (`style.v2.css`) | 캐시를 건드리지 않아 예측 가능. 배포 파이프라인에서 다루기 좋습니다 |
 
-### 6.9 오리진 장애 조치
+### 7.11 오리진 장애 조치
 
 고가용성이 필요하면 **오리진 그룹**에 **기본 오리진과 보조 오리진**을 넣습니다.
 
@@ -620,7 +1206,7 @@ CloudFront 가 각 객체를 오리진 요청 한 번으로 가져올 수 있게
 **주의**: 오리진 그룹에 Lambda@Edge 함수를 쓰면 단일 뷰어 요청에 대해 함수가
 **두 번 호출될 수 있습니다.**
 
-### 6.10 VPC 오리진: 프라이빗 서브넷을 오리진으로 🆕
+### 7.12 VPC 오리진: 프라이빗 서브넷을 오리진으로 🆕
 
 > 출시: **2024년 11월 20일**. 계정 간 VPC 오리진 공유는 **2025년 11월 5일** (문서 이력 기준).
 
@@ -633,11 +1219,14 @@ Network Load Balancer, EC2 인스턴스를 오리진으로 지정할 수 있습�
 퍼블릭 IP 가 필요 없습니다.
 
 ```text
-[교재 시점]  뷰어 → CloudFront → 인터넷 → 퍼블릭 서브넷의 ALB
-                                  ↑ 이 경로가 열려 있어 우회가 가능
+[교재 시점]
+  Viewer --> CloudFront --> internet --> ALB (public subnet)
+                            ^^^^^^^^
+                            이 경로가 열려 있어 우회가 가능합니다
 
-[VPC 오리진] 뷰어 → CloudFront ══ 서비스 관리형 ENI ══→ 프라이빗 서브넷의 ALB
-                                  퍼블릭 경로가 없음
+[VPC 오리진]
+  Viewer --> CloudFront ==> managed ENI ==> ALB (private subnet)
+                            퍼블릭 경로가 없습니다
 ```
 
 **전제 조건**
@@ -673,12 +1262,12 @@ VPC 오리진을 만들면 CloudFront 가 `CloudFront-VPCOrigins-Service-SG` 라
 **미지원 항목** — 시험이나 설계에서 걸릴 수 있는 부분입니다.
 
 - **gRPC 트래픽**
-- **Lambda@Edge 의 오리진 요청·오리진 응답 트리거** (7장에서 본 4개 이벤트 중 뒤 2개)
+- **Lambda@Edge 의 오리진 요청·오리진 응답 트리거** (8장에서 본 4개 이벤트 중 뒤 2개)
 - **네트워크 ACL** — CloudFront 에서 VPC 오리진으로 오는 트래픽에는 **인바운드 네트워크
   ACL 규칙이 평가되지 않습니다.** 다만 **반환 경로에서는 아웃바운드 규칙이 평가되므로**
   임시 TCP 포트(1024–65535)로 나가는 트래픽을 허용해야 합니다
 
-마지막 항목을 특히 조심하세요. 9장에서 "네트워크 ACL 은 스테이트리스라 양방향을 모두
+마지막 항목을 특히 조심하세요. 10장에서 "네트워크 ACL 은 스테이트리스라 양방향을 모두
 열어야 한다"고 배운 것의 변형입니다. 인바운드는 안 봐도 아웃바운드는 봅니다.
 
 VPC 오리진은 **지원 리전이 제한**되어 있습니다(문서 기준 34개 상업 리전이며 일부 AZ 제외).
@@ -686,11 +1275,11 @@ VPC 오리진은 **지원 리전이 제한**되어 있습니다(문서 기준 34
 
 > — 출처: [Restrict access with VPC origins](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html)
 
-### 6.11 애니캐스트 고정 IP 목록 🆕
+### 7.13 애니캐스트 고정 IP 목록 🆕
 
 > 출시: **2024년 11월 20일**. 정점 도메인 라우팅은 **2025년 4월 4일**, IPv4·듀얼스택 선택은 **2025년 11월 5일** (문서 이력 기준).
 
-8장에서 CloudFront 와 Global Accelerator 를 비교할 때 "CloudFront 의 진입점은 DNS 이름,
+9장에서 CloudFront 와 Global Accelerator 를 비교할 때 "CloudFront 의 진입점은 DNS 이름,
 Global Accelerator 는 고정 애니캐스트 IP" 로 구분합니다. **그 구분선이 흐려졌습니다.**
 
 CloudFront 에서도 **애니캐스트 고정 IP** 를 요청해 배포에 붙일 수 있습니다. 이 주소는
@@ -719,11 +1308,11 @@ IPAM 을 통한 **BYOIP** 로 내 IP 주소를 CloudFront 에 가져오는 것�
 
 > — 출처: [Request Anycast static IPs to use for allowlisting](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html)
 
-### 6.12 멀티테넌트 배포 🆕
+### 7.14 멀티테넌트 배포 🆕
 
 > 출시: **2025년 4월 28일** (문서 이력 기준). 교재 콘텐츠 시점보다 뒤입니다.
 
-도메인이 수백 개인 SaaS 를 운영한다고 생각해 보세요. 6.3 절대로 하면 **도메인마다 배포를
+도메인이 수백 개인 SaaS 를 운영한다고 생각해 보세요. 7.3 절대로 하면 **도메인마다 배포를
 하나씩** 만들어야 합니다. 설정이 거의 같은데도요.
 
 **멀티테넌트 배포**는 배포 설정을 **템플릿처럼 재사용**합니다. 구조가 셋으로 나뉩니다.
@@ -747,22 +1336,28 @@ IPAM 을 통한 **BYOIP** 로 내 IP 주소를 CloudFront 에 가져오는 것�
 
 주의할 점 하나. 멀티테넌트 배포를 만들면 CloudFront 가 오리진 유형에 맞춰 설정을 미리
 구성해 주는데, **VPC 오리진은 예외**입니다. VPC 오리진 설정은 VPC 오리진 리소스
-자체에서 조정합니다(6.10 절).
+자체에서 조정합니다(7.12 절).
 
 > — 출처: [Understand how multi-tenant distributions work](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html)
 
 ---
 
-## 7. 엣지에서 코드 실행하기
+## 8. 엣지에서 코드 실행하기
 
 교재는 **Lambda@Edge** 만 다룹니다. 현재 CloudFront 에는 **CloudFront Functions** 라는
 가벼운 옵션이 하나 더 있습니다. 🆕
 
-### 7.1 Lambda@Edge 의 네 가지 이벤트
+### 8.1 Lambda@Edge 의 네 가지 이벤트
 
 ```text
-뷰어 ──①뷰어 요청──→ CloudFront ──②오리진 요청──→ 오리진
-뷰어 ←─④뷰어 응답─── CloudFront ←─③오리진 응답─── 오리진
+  Viewer                CloudFront                Origin
+    |                        |                       |
+    |---- (1) viewer ------->|                       |
+    |         request        |--- (2) origin ------->|
+    |                        |        request        |
+    |                        |<-- (3) origin --------|
+    |<--- (4) viewer --------|        response       |
+    |         response       |                       |
 ```
 
 | 이벤트 | 시점 |
@@ -772,7 +1367,7 @@ IPAM 을 통한 **BYOIP** 로 내 IP 주소를 CloudFront 에 가져오는 것�
 | **오리진 응답** | CloudFront 가 오리진에서 응답을 받을 때 |
 | **뷰어 응답** | CloudFront 가 뷰어에게 응답을 반환하기 전 |
 
-### 7.2 CloudFront Functions 와 비교 🆕
+### 8.2 CloudFront Functions 와 비교 🆕
 
 > **먼저 짚을 것**: CloudFront Functions 는 **2021년 5월 3일**, KeyValueStore 는
 > **2023년 11월 21일**에 나왔습니다(문서 이력 기준). 둘 다 교재보다 앞섭니다.
@@ -793,7 +1388,7 @@ IPAM 을 통한 **BYOIP** 로 내 IP 주소를 CloudFront 에 가져오는 것�
 | CloudFront KeyValueStore | **지원** (JavaScript 런타임 2.0) | 미지원 |
 | CloudFront 안에서 빌드·테스트 | **가능** | 불가 |
 
-### 7.3 무엇을 쓸지
+### 8.3 무엇을 쓸지
 
 | 하려는 일 | 선택 |
 |---|---|
@@ -814,9 +1409,9 @@ Lambda@Edge"** 입니다.
 
 ---
 
-## 8. AWS Global Accelerator
+## 9. AWS Global Accelerator
 
-### 8.1 CloudFront 와 무엇이 다른가
+### 9.1 CloudFront 와 무엇이 다른가
 
 같은 "엣지 로케이션을 쓴다"는 말 때문에 헷갈립니다. 목적이 다릅니다.
 
@@ -824,17 +1419,17 @@ Lambda@Edge"** 입니다.
 |---|---|---|
 | 하는 일 | 콘텐츠를 **캐시**해서 가까이서 제공 | 트래픽을 AWS 백본으로 **가속** |
 | 대상 프로토콜 | HTTP/HTTPS | **TCP 및 UDP** |
-| 진입점 | 배포 도메인 이름 (DNS). 요청하면 애니캐스트 고정 IP 도 붙일 수 있습니다(6.11 절) | **2개의 고정 애니캐스트 IP 주소** (기본 제공) |
+| 진입점 | 배포 도메인 이름 (DNS). 요청하면 애니캐스트 고정 IP 도 붙일 수 있습니다(7.13 절) | **2개의 고정 애니캐스트 IP 주소** (기본 제공) |
 | 캐싱 | 함 | **안 함** |
 | 대표 대상 | S3, ELB, 사용자 지정 오리진, VPC 오리진 | ALB, NLB, EC2 인스턴스, 탄력적 IP |
 | 언제 | 정적·동적 웹 콘텐츠 전송 | 게임, VoIP, IoT, 비 HTTP 애플리케이션 |
 
 **"고정 IP 가 필요하면 Global Accelerator"라는 옛 판단 기준은 이제 정확하지 않습니다.**
-6.11 절의 애니캐스트 고정 IP 목록이 CloudFront 에도 고정 IP 를 줍니다. 지금의 판단
+7.13 절의 애니캐스트 고정 IP 목록이 CloudFront 에도 고정 IP 를 줍니다. 지금의 판단
 기준은 **캐싱이 필요한지, 그리고 프로토콜이 HTTP 인지**입니다. HTTP 콘텐츠를 캐시하고
 싶으면 CloudFront, TCP·UDP 경로를 가속하고 싶으면 Global Accelerator 입니다.
 
-### 8.2 네 가지 주요 기능
+### 9.2 네 가지 주요 기능
 
 | 기능 | 내용 |
 |---|---|
@@ -847,13 +1442,13 @@ Lambda@Edge"** 입니다.
 클라이언트가 보는 IP 주소는 바뀌지 않으므로, **DNS 캐싱에 의존하는 디바이스**에서도
 전환이 됩니다.
 
-### 8.3 IP 주소 구성 🆕
+### 9.3 IP 주소 구성 🆕
 
 교재는 "2개의 글로벌 정적 퍼블릭 IP" 라고만 적습니다. 듀얼 스택 액셀러레이터도 있습니다.
 
 **듀얼 스택 액셀러레이터는 2022년 7월 27일에 나왔습니다.** 교재가 만들어질 때 이미
 있었던 기능이므로 "교재 이후 변경"이 아니라 **교재가 다루지 않은 것**입니다.
-(문서 이력 기준. 11.4 절 참조)
+(문서 이력 기준. 12.4 절 참조)
 
 | 구성 | 제공되는 주소 |
 |---|---|
@@ -867,7 +1462,7 @@ Lambda@Edge"** 입니다.
 
 > — 출처: [Understanding AWS Global Accelerator use cases](https://docs.aws.amazon.com/global-accelerator/latest/dg/introduction-benefits-of-migrating.html)
 
-### 8.4 보안 이점 🆕
+### 9.4 보안 이점 🆕
 
 교재에 없는 내용입니다.
 
@@ -879,7 +1474,7 @@ Lambda@Edge"** 입니다.
 
 > — 출처: [Understanding AWS Global Accelerator use cases](https://docs.aws.amazon.com/global-accelerator/latest/dg/introduction-benefits-of-migrating.html)
 
-### 8.5 액셀러레이터 두 유형
+### 9.5 액셀러레이터 두 유형
 
 | 유형 | 동작 | 사용 사례 |
 |---|---|---|
@@ -890,12 +1485,16 @@ Lambda@Edge"** 입니다.
 클라이언트를 연결하면서, 어떤 클라이언트를 어떤 인스턴스와 포트로 보낼지 완전히
 제어합니다.
 
-### 8.6 동작 방식
+### 9.6 동작 방식
 
 ```text
-사용자(유럽) ──→ 가까운 엣지 로케이션 ═══ AWS 글로벌 네트워크 ═══→ eu-west-1 엔드포인트
-사용자(미국) ──→ 가까운 엣지 로케이션 ═══ AWS 글로벌 네트워크 ═══→ us-east-1 엔드포인트
-                 (같은 애니캐스트 IP 주소로 접속)
+  User (Europe)  -->  nearest edge  ===  AWS global  ===>  eu-west-1
+                      location           network           endpoint
+
+  User (US)      -->  nearest edge  ===  AWS global  ===>  us-east-1
+                      location           network           endpoint
+
+  두 사용자가 같은 애니캐스트 IP 주소로 접속합니다
 ```
 
 - PoP 의 **리스너**가 포트와 프로토콜을 기준으로 인바운드 연결을 처리합니다
@@ -905,25 +1504,31 @@ Lambda@Edge"** 입니다.
 
 ---
 
-## 9. 실습 2: CloudFront로 성능 가속화
+## 10. 실습 2: CloudFront로 성능 가속화
 
 소요 시간 45분. 상세 절차는 실습 가이드를 따르세요.
 
-### 9.1 실습 태스크
+### 10.1 실습 태스크
 
 1. CloudFront 배포 생성
 2. Amazon CloudFront 에서 콘텐츠 업데이트 및 **무효화**
 3. CloudFront **캐싱 성능** 확인
 4. CloudFront **오리진 보안 모범 사례** 구현
 
-### 9.2 시작 상태와 완성 상태
+### 10.2 시작 상태와 완성 상태
 
 ```text
-[시작]  사용자 ──────────────────────→ Application Load Balancer → 웹 서버 ×2
-                                       (단일 리전, VPC 안)
+[시작]
 
-[완성]  사용자 → 엣지 로케이션 → 리전 엣지 캐시 → ALB → 웹 서버 ×2
-                 └── CloudFront 네트워크 ──┘
+  Users  ---------------------------->  ALB  --->  Web servers x2
+                                        (single Region, inside VPC)
+
+[완성]
+
+  Users  --->  Edge location  --->  Regional edge cache  --->  ALB
+               +--------- CloudFront network ---------+          |
+                                                                 v
+                                                        Web servers x2
 ```
 
 **개념적으로 무엇이 좋아지는가.** 사용자와 오리진 사이의 물리적 거리가 그대로여도,
@@ -935,7 +1540,7 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 직접 접근 가능하면** 우회가 됩니다. 그래서 원본 액세스 제어나 커스텀 헤더 검증 같은
 방법으로 **오리진을 CloudFront 로만 열어 두는** 것이 마무리 작업입니다.
 
-### 9.3 ExampleCorp 의 결론
+### 10.3 ExampleCorp 의 결론
 
 - Terry 는 여러 리전에 걸친 콘텐츠 전송 지연 시간을 최소화하는 CloudFront 를 통합했습니다
 - 피어링, Transit Gateway, VPC 엔드포인트, Global Accelerator 는 **향후 통합 옵션**으로
@@ -943,7 +1548,7 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 
 ---
 
-## 10. 한눈에 정리
+## 11. 한눈에 정리
 
 ### 무엇을 고를지
 
@@ -951,11 +1556,12 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 |---|---|
 | VPC 2\~3개를 붙이면 되고 단순하게 가고 싶다 | **VPC 피어링** |
 | VPC 가 계속 늘어나고 온프레미스도 붙일 것이다 | **AWS Transit Gateway** |
-| CIDR 이 겹치는데 서비스끼리 통신해야 한다 | **Amazon VPC Lattice** |
+| CIDR 이 겹치는데 서비스끼리 통신해야 한다 | **VPC 엔드포인트 서비스** 또는 **Amazon VPC Lattice**. 둘 다 중복 CIDR 을 지원합니다 (5장) |
+| 내 서비스를 다른 계정에 프라이빗하게 노출하고 싶고, 서비스가 하나이며 TCP·UDP 로 충분하다 | **VPC 엔드포인트 서비스** (AWS PrivateLink, 계층 4) |
+| 서비스가 여럿이고 요청 내용으로 라우팅하거나 IAM 으로 통제해야 한다 | **Amazon VPC Lattice** (계층 7) |
 | 프라이빗 서브넷에서 S3·DynamoDB 만 쓰면 된다 | **게이트웨이 엔드포인트** (추가 요금 없음) |
 | 온프레미스에서도 접근하거나 보안 그룹으로 제어해야 한다 | **인터페이스 엔드포인트** |
 | 다른 리전의 AWS 서비스에 프라이빗하게 접근해야 한다 | **리전 간 인터페이스 엔드포인트** (다만 리전 내가 더 빠르고 저렴합니다) |
-| 내 서비스를 다른 계정에 프라이빗하게 노출하고 싶다 | **AWS PrivateLink** |
 | HTTP 콘텐츠를 사용자 가까이서 제공하고 싶다 | **Amazon CloudFront** |
 | CloudFront 오리진을 인터넷에서 완전히 닫고 싶다 | **CloudFront VPC 오리진** |
 | SaaS 처럼 도메인이 수백 개다 | **CloudFront 멀티테넌트 배포** |
@@ -971,18 +1577,20 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 | VPC 피어링 MTU 는 1500 이다 | 리전 간은 8500, 리전 내는 점보 프레임 경로입니다 |
 | 게이트웨이 엔드포인트로 온프레미스에서 S3 에 갈 수 있다 | 갈 수 없습니다. 인터페이스 엔드포인트가 필요합니다 |
 | 인터페이스 엔드포인트도 라우팅 테이블을 고쳐야 한다 | 고치지 않습니다. DNS 로 동작합니다 |
+| 엔드포인트 서비스와 VPC Lattice 는 사실상 같은 것이다 | 엔드포인트 서비스는 **계층 4 · 서비스 1개 · NLB 필수**, VPC Lattice 는 **계층 7 · 서비스 네트워크 · NLB 불필요**입니다 |
+| VPC Lattice 를 쓰면 PrivateLink 는 안 쓴다 | 서비스 네트워크를 온프레미스·타 VPC 에서 쓸 때 필요한 **서비스 네트워크 유형 VPC 엔드포인트가 PrivateLink** 입니다 |
 | CloudFront 와 Global Accelerator 는 같은 것이다 | 캐싱 vs 경로 가속. 프로토콜도 다릅니다 |
 | 고정 IP 가 필요하면 무조건 Global Accelerator 다 | CloudFront 도 애니캐스트 고정 IP 를 요청할 수 있습니다 |
 | CloudFront 오리진은 퍼블릭이어야 한다 | VPC 오리진으로 프라이빗 서브넷의 ALB·NLB·EC2 를 쓸 수 있습니다 |
 | 엣지 함수는 Lambda@Edge 뿐이다 | CloudFront Functions 가 있고 가벼운 작업에는 이쪽이 맞습니다 |
-| 캐시 키에 값을 많이 넣으면 정확해진다 | 캐시 적중률이 떨어집니다. 적을수록 적중률이 올라갑니다 |
+| 캐시 키에 값을 많이 넣으면 정확해진다 | **오리진 응답을 바꾸는 값만** 넣습니다. 응답을 바꾸지 않는 값을 넣으면 같은 객체가 중복 캐시되어 적중률이 떨어집니다 |
 | VPC 오리진에는 네트워크 ACL 이 안 통한다 | 인바운드 규칙은 평가되지 않지만 **반환 경로의 아웃바운드 규칙은 평가됩니다** |
 
 ---
 
-## 11. 교재 대비 변경 사항
+## 12. 교재 대비 변경 사항
 
-### 11.1 교재 기술이 사실과 다른 항목
+### 12.1 교재 기술이 사실과 다른 항목
 
 | 교재 기재 (위치) | 확인된 내용 | 근거 |
 |---|---|---|
@@ -994,21 +1602,17 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 읽힙니다. 슬라이드 10 은 리전 간 피어링을 지원한다고 명시하므로 **표현이 어긋난 것**으로
 보입니다.
 
-### 11.2 동작·기능 명칭이 변경된 항목
+### 12.2 동작·기능 명칭이 변경된 항목
 
 | 항목 | 교재 | 현재 | 근거 |
 |---|---|---|---|
 | VPC 엔드포인트 문서 위치 | "VPC 엔드포인트"를 독립 주제로 서술 | **AWS PrivateLink 사용 설명서**로 편입되었습니다. 게이트웨이·인터페이스 엔드포인트 용어는 그대로 쓰입니다 | [What is AWS PrivateLink?](https://docs.aws.amazon.com/vpc/latest/privatelink/what-is-privatelink.html) |
 
-> 이전 판에서는 Global Accelerator 의 듀얼 스택 주소를 이 절(변경된 항목)에 넣었습니다.
-> 문서 이력을 확인해 보니 **듀얼 스택 액셀러레이터는 2022년 7월 27일 출시**로 교재보다
-> 앞섭니다. 변경이 아니라 **교재의 누락**이므로 11.4 절로 옮겼습니다.
-
-### 11.3 비권장·지원 종료된 항목
+### 12.3 비권장·지원 종료된 항목
 
 이 모듈에서 지원 종료로 확인된 항목은 없습니다.
 
-### 11.4 교재에 없는 항목
+### 12.4 교재에 없는 항목
 
 교재에 없는 것을 **출시 시점 기준으로 나눴습니다.** 날짜는 각 서비스 문서 이력
 (document history)에서 확인했습니다. 이 모듈은 **교재보다 먼저 나왔는데 교재가 다루지
@@ -1018,10 +1622,10 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 
 | 항목 | 출시 | 무엇인가 | 근거 |
 |---|---|---|---|
-| **CloudFront 멀티테넌트 배포** | 2025-04-28 | 배포 설정을 템플릿처럼 재사용합니다. 멀티테넌트 배포 + 배포 테넌트 + 연결 그룹 구조이고, 멀티테넌트 배포 자체는 라우팅 엔드포인트가 없어 직접 접근할 수 없습니다 (6.12 절) | [Understand how multi-tenant distributions work](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html) |
+| **CloudFront 멀티테넌트 배포** | 2025-04-28 | 배포 설정을 템플릿처럼 재사용합니다. 멀티테넌트 배포 + 배포 테넌트 + 연결 그룹 구조이고, 멀티테넌트 배포 자체는 라우팅 엔드포인트가 없어 직접 접근할 수 없습니다 (7.14 절) | [Understand how multi-tenant distributions work](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html) |
 | **PrivateLink 리전 간 액세스** | 2024-11-26 | 다른 리전의 AWS 서비스에 프라이빗하게 접근합니다. `vpce:AllowMultiRegion` 권한과 리전 DNS 가 필요하고, 리전 간 장애 조치는 PrivateLink 가 관리하지 않습니다 (4.6 절) | [Cross-region enabled AWS services](https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-cross-region-privatelink-support.html) |
-| **CloudFront VPC 오리진** | 2024-11-20 | 프라이빗 서브넷의 ALB·NLB·EC2 를 오리진으로 씁니다. 서비스 관리형 ENI 와 보안 그룹을 CloudFront 가 만듭니다. gRPC, Lambda@Edge 오리진 트리거, 인바운드 네트워크 ACL 은 미지원 (6.10 절) | [Restrict access with VPC origins](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html) |
-| **CloudFront 애니캐스트 고정 IP 목록** | 2024-11-20 | 허용 목록 등록용 21개 또는 정점 도메인 라우팅용 3개를 요청합니다. 가격 등급이 "모든 엣지 로케이션 사용"이어야 하고 지원 엔지니어링 검토가 필요합니다 (6.11 절) | [Request Anycast static IPs to use for allowlisting](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) |
+| **CloudFront VPC 오리진** | 2024-11-20 | 프라이빗 서브넷의 ALB·NLB·EC2 를 오리진으로 씁니다. 서비스 관리형 ENI 와 보안 그룹을 CloudFront 가 만듭니다. gRPC, Lambda@Edge 오리진 트리거, 인바운드 네트워크 ACL 은 미지원 (7.12 절) | [Restrict access with VPC origins](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html) |
+| **CloudFront 애니캐스트 고정 IP 목록** | 2024-11-20 | 허용 목록 등록용 21개 또는 정점 도메인 라우팅용 3개를 요청합니다. 가격 등급이 "모든 엣지 로케이션 사용"이어야 하고 지원 엔지니어링 검토가 필요합니다 (7.13 절) | [Request Anycast static IPs to use for allowlisting](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) |
 
 **교재 콘텐츠 시점 이전 출시 — 교재가 다루지 않은 것**
 
@@ -1029,10 +1633,10 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 
 | 항목 | 출시 | 왜 교재에 없나 | 근거 |
 |---|---|---|---|
-| **CloudFront Functions** | 2021-05-03 | 교재가 **Lambda@Edge 만** 다루기로 했습니다 (7.2 절) | [Amazon CloudFront 문서 이력](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/WhatsNew.html) |
-| **CloudFront KeyValueStore** | 2023-11-21 | 같은 이유. CloudFront Functions 전용 기능입니다 (7.2 절) | [Amazon CloudFront 문서 이력](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/WhatsNew.html) |
-| **Global Accelerator 듀얼 스택 액셀러레이터** | 2022-07-27 | 교재가 IPv4 구성만 소개했습니다. IPv4 2개 + IPv6 2개, 총 4개 주소 (8.3 절) | [AWS Global Accelerator 문서 이력](https://docs.aws.amazon.com/global-accelerator/latest/dg/WhatsNew.html) |
-| **Amazon VPC Lattice** | 2023-03-31 (GA) | 덱 작성 시기와 거의 겹칩니다. 교재가 계층 3 연결 옵션만 다루기로 한 것으로 보입니다 (3.6 절) | [Document history for the Amazon VPC Lattice User Guide](https://docs.aws.amazon.com/vpc-lattice/latest/ug/doc-history.html) |
+| **CloudFront Functions** | 2021-05-03 | 교재가 **Lambda@Edge 만** 다루기로 했습니다 (8.2 절) | [Amazon CloudFront 문서 이력](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/WhatsNew.html) |
+| **CloudFront KeyValueStore** | 2023-11-21 | 같은 이유. CloudFront Functions 전용 기능입니다 (8.2 절) | [Amazon CloudFront 문서 이력](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/WhatsNew.html) |
+| **Global Accelerator 듀얼 스택 액셀러레이터** | 2022-07-27 | 교재가 IPv4 구성만 소개했습니다. IPv4 2개 + IPv6 2개, 총 4개 주소 (9.3 절) | [AWS Global Accelerator 문서 이력](https://docs.aws.amazon.com/global-accelerator/latest/dg/WhatsNew.html) |
+| **Amazon VPC Lattice** | 2023-03-31 (GA) | 덱 작성 시기와 거의 겹칩니다. 교재가 계층 3 연결 옵션만 다루기로 한 것으로 보입니다 (5장) | [Document history for the Amazon VPC Lattice User Guide](https://docs.aws.amazon.com/vpc-lattice/latest/ug/doc-history.html) |
 
 **출시 시점을 확인하지 않은 항목**
 
@@ -1041,12 +1645,15 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 
 | 항목 | 근거 |
 |---|---|
+| Transit Gateway **격리된 VPC** 구성 예시. 교재는 "프로덕션·비프로덕션을 다른 라우팅 테이블에 연관시킨다"고만 적고 연관·전파를 어떻게 걸어야 하는지는 보여 주지 않습니다. 3.4 절에 두 라우팅 테이블 구성, 블랙홀 경로, 정적 경로 우선순위, 기본 라우팅 테이블 옵션을 더했습니다 | [How AWS Transit Gateway works](https://docs.aws.amazon.com/vpc/latest/tgw/how-transit-gateways-work.html) |
+| **캐시 키의 정의와 관리형 정책(프리셋).** 교재는 캐시 정책을 설명하면서 "캐시 키"를 정의하지 않고, 관리형 정책도 다루지 않습니다. 7.4 절에 기본 캐시 키 구성 요소·중복 캐시 문제를, 7.6 절에 관리형 캐시 정책 3종과 관리형 오리진 요청 정책을 더했습니다 | [Understand the cache key](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/understanding-the-cache-key.html), [Use managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) |
+| **VPC 엔드포인트 서비스와 VPC Lattice 의 비교.** 교재는 엔드포인트 서비스를 "내 서비스를 프라이빗하게 노출하는 수단"으로만 언급하고 VPC Lattice 를 다루지 않으므로, 둘이 같은 요구에 답하면서 어떻게 다른지 비교할 지점이 없습니다. 5장에 노출 단위, 프로토콜, 권한 부여, 관찰성 비교를 더했습니다 | [AWS PrivateLink concepts](https://docs.aws.amazon.com/vpc/latest/privatelink/concepts.html), [Overview of AWS networking services for SaaS offerings](https://docs.aws.amazon.com/prescriptive-guidance/latest/saas-network-access-options/services.html) |
 | Lambda@Edge 의 Node.js·Python 지원 (교재는 언어를 명시하지 않았습니다) | [Differences between CloudFront Functions and Lambda@Edge](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/edge-functions-choosing.html) |
 | Global Accelerator 의 AWS Shield 보호, VPC 피어링 연결 | [AWS Global Accelerator use cases](https://docs.aws.amazon.com/global-accelerator/latest/dg/introduction-benefits-of-migrating.html) |
 | VPC 피어링 연결 상태 수명 주기 (`pending-acceptance` 7일 만료 등) | [How VPC peering connections work](https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-basics.html) |
 | 피어 VPC 보안 그룹 참조, 피어링 DNS 호스트 이름 확인 | [How VPC peering connections work](https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-basics.html) |
 
-### 11.5 검증하지 못한 항목
+### 12.5 검증하지 못한 항목
 
 | 항목 | 교재 기술 | 상태 |
 |---|---|---|
@@ -1056,3 +1663,6 @@ AWS 백본을 타므로 홉이 줄어듭니다. 그리고 오리진 서버가 �
 | Transit Gateway 쿼터 | 계정당 5개(조정 가능), TGW 당 CIDR 블록 5개, 최대 5,000개 VPC | 같은 이유로 수치를 본문에 넣지 않았습니다 |
 | CloudFront Origin Shield 상세 | 오리진 앞 추가 캐싱 계층 | Origin Shield 문서를 직접 확인하지 못했습니다. 교재 기술 범위로만 적었습니다 |
 | 인터페이스 엔드포인트 지원 서비스 수 | 교재 표에 서비스 목록이 있습니다 | 목록은 계속 늘어나므로 개수를 적지 않고 대표 예시만 넣었습니다 |
+
+
+
